@@ -1,0 +1,19 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /orders/{orderId} {
+
+      allow read: if request.auth != null &&
+                   request.auth.token.email.matches(".*@snu\\.edu\\.in$");
+
+      allow create: if request.auth != null &&
+                     request.auth.token.email.matches(".*@snu\\.edu\\.in$");
+
+      allow update, delete:
+        if request.auth != null &&
+           resource.data.posterId == request.auth.uid;
+    }
+  }
+}
