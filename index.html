@@ -114,6 +114,25 @@
     </div>
   </section>
 
+  <section class="quick-post" id="quickPost" hidden>
+    <div class="quick-post-row">
+      <span class="quick-post-label">⚡ Quick post</span>
+      <select id="qpApp" aria-label="App"></select>
+      <div class="quick-post-amount">
+        <span>₹</span>
+        <input type="number" id="qpTarget" min="1" step="1" placeholder="79" aria-label="Amount needed" />
+      </div>
+      <select id="qpExpiry" aria-label="Closes in">
+        <option value="15">15 min</option>
+        <option value="30">30 min</option>
+        <option value="60">1 hr</option>
+        <option value="120">2 hrs</option>
+      </select>
+      <button type="button" class="btn btn-primary" id="qpSubmit">Post</button>
+    </div>
+    <p class="quick-post-note" id="quickPostNote"></p>
+  </section>
+
   <section class="board-controls">
     <div class="filter-tabs" id="filterTabs">
       <button class="filter-tab active" data-filter="all">All orders</button>
@@ -184,6 +203,7 @@
         <label class="field">
           <span class="field-label">Where (hostel / block)</span>
           <input type="text" id="fLocation" maxlength="60" placeholder="Block C, Room 214" required />
+          <span class="field-hint" id="locationHint" hidden>Remembered from last time — edit any time.</span>
         </label>
         <label class="field">
           <span class="field-label">Closes in</span>
@@ -199,6 +219,7 @@
       <label class="field">
         <span class="field-label">How to reach you</span>
         <input type="text" id="fContact" maxlength="80" placeholder="WhatsApp / Instagram / room number" required />
+        <span class="field-hint" id="contactHint" hidden>Remembered from last time — edit any time.</span>
       </label>
 
       <button type="submit" class="btn btn-primary btn-block">Post to the board</button>

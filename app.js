@@ -1,6 +1,6 @@
 import { db, auth, googleProvider, ALLOWED_DOMAIN } from "./firebase-config.js";
 import {
-  collection, addDoc, onSnapshot, deleteDoc, doc,
+  collection, addDoc, onSnapshot, deleteDoc, doc, setDoc,
   serverTimestamp, query, orderBy
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
@@ -81,6 +81,8 @@ onAuthStateChanged(auth, (user) => {
     whoamiEmail.textContent = myName;
     loginGate.hidden = true;
     appRoot.hidden = false;
+    refreshQuickPostBar();
+    startOrdersListener(); // only start reading once we actually have a valid, verified auth token
   } else {
     if (user) {
       // signed in but wrong domain — kick them out
@@ -92,10 +94,110 @@ onAuthStateChanged(auth, (user) => {
     myName = null;
     loginGate.hidden = false;
     appRoot.hidden = true;
+    stopOrdersListener();
   }
 });
 
 function getMyName() { return myName || ""; }
+
+/* ---------------- remembered defaults (contact, location, last app/expiry) ---------------- */
+function fieldKey(field) {
+  return `orderup_${field}_${(myEmail || "").toLowerCase()}`;
+}
+function getSavedField(field) {
+  if (!myEmail) return "";
+  try {
+    return localStorage.getItem(fieldKey(field)) || "";
+  } catch {
+    return "";
+  }
+}
+function saveField(field, value) {
+  if (!myEmail) return;
+  try {
+    localStorage.setItem(fieldKey(field), value);
+  } catch { /* ignore (e.g. storage disabled) */ }
+}
+const getSavedContact = () => getSavedField("contact");
+const saveContact = (v) => saveField("contact", v);
+const getSavedLocation = () => getSavedField("location");
+const saveLocation = (v) => saveField("location", v);
+const getSavedApp = () => getSavedField("app");
+const saveApp = (v) => saveField("app", v);
+const getSavedExpiry = () => getSavedField("expiry");
+const saveExpiry = (v) => saveField("expiry", v);
+
+function hasQuickPostDefaults() {
+  return !!(getSavedContact() && getSavedLocation());
+}
+
+/* ---------------- quick post bar ---------------- */
+const quickPost = document.getElementById("quickPost");
+const qpApp = document.getElementById("qpApp");
+const qpTarget = document.getElementById("qpTarget");
+const qpExpiry = document.getElementById("qpExpiry");
+const qpSubmit = document.getElementById("qpSubmit");
+const quickPostNote = document.getElementById("quickPostNote");
+
+// mirror the same app options as the full form, so they stay in sync
+qpApp.innerHTML = document.getElementById("fApp").innerHTML;
+
+function refreshQuickPostBar() {
+  if (!hasQuickPostDefaults()) {
+    quickPost.hidden = true;
+    return;
+  }
+  quickPost.hidden = false;
+  const savedApp = getSavedApp();
+  if (savedApp) qpApp.value = savedApp;
+  const savedExpiry = getSavedExpiry();
+  if (savedExpiry) qpExpiry.value = savedExpiry;
+  quickPostNote.textContent = `Posts to ${getSavedLocation()} · reachable at ${getSavedContact()}. Tap "Post an order" to change these.`;
+}
+
+qpSubmit.addEventListener("click", async () => {
+  const target = Number(qpTarget.value);
+  if (!target || target <= 0) {
+    toast("Enter how much ₹ is needed first");
+    qpTarget.focus();
+    return;
+  }
+  const minutes = Number(qpExpiry.value);
+  const expiresAt = Date.now() + minutes * 60 * 1000;
+  const appVal = qpApp.value;
+
+  const payload = {
+    app: appVal,
+    current: 0,
+    target,
+    items: "",
+    location: getSavedLocation(),
+    contact: getSavedContact(),
+    posterId: myId,
+    posterName: getMyName(),
+    posterEmail: myEmail,
+    createdAt: serverTimestamp(),
+    expiresAt
+  };
+
+  qpSubmit.disabled = true;
+  try {
+    await addDoc(collection(db, ORDERS_COL), payload);
+    saveApp(appVal);
+    saveExpiry(qpExpiry.value);
+    qpTarget.value = "";
+    toast("Posted to the board 🎉");
+  } catch (err) {
+    console.error(err);
+    toast("Couldn't post — check your Firebase setup");
+  } finally {
+    qpSubmit.disabled = false;
+  }
+});
+
+qpTarget.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); qpSubmit.click(); }
+});
 
 /* ---------------- DOM refs: app ---------------- */
 const board = document.getElementById("board");
@@ -149,7 +251,37 @@ function toast(msg) {
 function openModal(el) { el.classList.add("open"); }
 function closeModal(el) { el.classList.remove("open"); }
 
-openPostModalBtn.addEventListener("click", () => openModal(postModalBackdrop));
+openPostModalBtn.addEventListener("click", () => {
+  const fContact = document.getElementById("fContact");
+  const fLocation = document.getElementById("fLocation");
+  const fApp = document.getElementById("fApp");
+  const fExpiry = document.getElementById("fExpiry");
+  const contactHint = document.getElementById("contactHint");
+  const locationHint = document.getElementById("locationHint");
+
+  if (!fContact.value) {
+    const saved = getSavedContact();
+    if (saved) { fContact.value = saved; contactHint.hidden = false; }
+  }
+  if (!fLocation.value) {
+    const saved = getSavedLocation();
+    if (saved) { fLocation.value = saved; locationHint.hidden = false; }
+  }
+  const savedApp = getSavedApp();
+  if (savedApp) fApp.value = savedApp;
+  const savedExpiry = getSavedExpiry();
+  if (savedExpiry) fExpiry.value = savedExpiry;
+
+  openModal(postModalBackdrop);
+});
+
+// hide the "remembered" hints as soon as they start editing them
+document.getElementById("fContact").addEventListener("input", () => {
+  document.getElementById("contactHint").hidden = true;
+});
+document.getElementById("fLocation").addEventListener("input", () => {
+  document.getElementById("locationHint").hidden = true;
+});
 closePostModalBtn.addEventListener("click", () => closeModal(postModalBackdrop));
 postModalBackdrop.addEventListener("click", (e) => {
   if (e.target === postModalBackdrop) closeModal(postModalBackdrop);
@@ -174,13 +306,18 @@ postForm.addEventListener("submit", async (e) => {
   const minutes = Number(document.getElementById("fExpiry").value);
   const expiresAt = Date.now() + minutes * 60 * 1000;
 
+  const contact = document.getElementById("fContact").value.trim();
+  const location = document.getElementById("fLocation").value.trim();
+  const appVal = document.getElementById("fApp").value;
+  const expiryVal = document.getElementById("fExpiry").value;
+
   const payload = {
-    app: document.getElementById("fApp").value,
+    app: appVal,
     current,
     target,
     items: document.getElementById("fItems").value.trim(),
-    location: document.getElementById("fLocation").value.trim(),
-    contact: document.getElementById("fContact").value.trim(),
+    location,
+    contact,
     posterId: myId,
     posterName: getMyName(),
     posterEmail: myEmail,
@@ -190,9 +327,16 @@ postForm.addEventListener("submit", async (e) => {
 
   try {
     await addDoc(collection(db, ORDERS_COL), payload);
+    saveContact(contact);
+    saveLocation(location);
+    saveApp(appVal);
+    saveExpiry(expiryVal);
     postForm.reset();
+    document.getElementById("contactHint").hidden = true;
+    document.getElementById("locationHint").hidden = true;
     closeModal(postModalBackdrop);
     toast("Posted to the board 🎉");
+    refreshQuickPostBar();
   } catch (err) {
     console.error(err);
     toast("Couldn't post — check your Firebase setup");
@@ -200,15 +344,28 @@ postForm.addEventListener("submit", async (e) => {
 });
 
 /* ---------------- realtime listener ---------------- */
-const q = query(collection(db, ORDERS_COL), orderBy("createdAt", "desc"));
-onSnapshot(q, (snap) => {
+let unsubscribeOrders = null;
+
+function startOrdersListener() {
+  if (unsubscribeOrders) return; // already listening
+  const q = query(collection(db, ORDERS_COL), orderBy("createdAt", "desc"));
+  unsubscribeOrders = onSnapshot(q, (snap) => {
+    latestOrders = [];
+    snap.forEach(d => latestOrders.push({ id: d.id, ...d.data() }));
+    render();
+  }, (err) => {
+    console.error(err);
+    board.innerHTML = `<p class="empty-state">Couldn't connect to the board. Check that firebase-config.js has been filled in with a real project.</p>`;
+  });
+}
+
+function stopOrdersListener() {
+  if (unsubscribeOrders) {
+    unsubscribeOrders();
+    unsubscribeOrders = null;
+  }
   latestOrders = [];
-  snap.forEach(d => latestOrders.push({ id: d.id, ...d.data() }));
-  render();
-}, (err) => {
-  console.error(err);
-  board.innerHTML = `<p class="empty-state">Couldn't connect to the board. Check that firebase-config.js has been filled in with a real project.</p>`;
-});
+}
 
 /* ---------------- render ---------------- */
 function timeLeftLabel(expiresAt) {
@@ -264,10 +421,29 @@ function cardInnerHTML(o, now, myValue) {
 function wireCardEvents(el, o) {
   const joinBtn = el.querySelector("[data-join]");
   if (joinBtn) {
-    joinBtn.addEventListener("click", () => {
-      const slot = el.querySelector(".contact-slot");
-      slot.innerHTML = `<div class="contact-reveal">Reach out: ${escapeHtml(o.contact)}</div>`;
+    joinBtn.addEventListener("click", async () => {
       joinBtn.disabled = true;
+      joinBtn.textContent = "…";
+
+      // record the join so the poster's device (or their Cloud Function) knows to notify them
+      try {
+        await setDoc(doc(db, ORDERS_COL, o.id, "joins", myId), {
+          joinerId: myId,
+          joinerName: getMyName(),
+          joinerEmail: myEmail,
+          joinedAt: serverTimestamp()
+        }, { merge: true });
+      } catch (err) {
+        console.error("Couldn't record join (notification to poster may not fire):", err);
+      }
+
+      const slot = el.querySelector(".contact-slot");
+      const waDigits = extractWhatsAppDigits(o.contact);
+      let html = `<div class="contact-reveal">Reach out: ${escapeHtml(o.contact)}</div>`;
+      if (waDigits) {
+        html += `<a class="btn btn-primary btn-block wa-link" href="${buildWhatsAppLink(waDigits, o)}" target="_blank" rel="noopener">Message on WhatsApp</a>`;
+      }
+      slot.innerHTML = html;
       joinBtn.textContent = "Contact revealed ✓";
     });
   }
@@ -360,6 +536,20 @@ function render() {
   [...board.children].forEach(el => {
     if (!stillPresent.has(el.dataset.orderId)) el.remove();
   });
+}
+
+function extractWhatsAppDigits(contact) {
+  const digits = String(contact || "").replace(/[^\d]/g, "");
+  if (digits.length === 10) return "91" + digits;               // bare 10-digit Indian number
+  if (digits.length === 11 && digits.startsWith("0")) return "91" + digits.slice(1); // 0-prefixed
+  if (digits.length === 12 && digits.startsWith("91")) return digits; // already has country code
+  if (digits.length === 13 && digits.startsWith("091")) return "91" + digits.slice(3);
+  return null; // doesn't look like a phone number (Instagram handle, room number, etc.)
+}
+
+function buildWhatsAppLink(digits, o) {
+  const msg = `Hey! Saw your OrderUp post for ${o.app} (₹${o.target} more needed) — I'm in, let's split delivery!`;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`;
 }
 
 function escapeHtml(str) {
