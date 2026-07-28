@@ -4,8 +4,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>OrderUp — split the delivery, not the food</title>
-  <meta name="description" content="Post your order, find someone to split delivery with. Built for campus." />
+  <title>OrderUp — club your order, split the delivery</title>
+  <meta name="description" content="Club your Blinkit, Zomato or Swiggy order with someone on campus. Hit the free-delivery minimum and unlock large-order promos together." />
   <meta name="theme-color" content="#1B2A2F" />
 
   <link rel="manifest" href="manifest.json" />
@@ -80,64 +80,75 @@
     <main class="wrap">
 
       <section class="hero">
-        <p class="eyebrow">the campus notice board, but it's your Blinkit cart</p>
+        <p class="eyebrow">the campus notice board, but it's your cart</p>
         <h1 class="hero-title">Nobody should pay<br /><em>₹40 delivery</em> alone.</h1>
-        <p class="hero-sub">Club your Blinkit/Zomato/Swiggy order with someone else's to cross the free delivery minimum
-          — no need to add random extra items just to save delivery.</p>
+        <p class="hero-sub">Club your Blinkit, Zomato or Swiggy order with someone else's — cross the free-delivery
+          minimum, or hit the cart size that unlocks the big promo codes. No filler items required.</p>
       </section>
 
-      <section class="smart-search" id="smartSearch">
-        <button class="search-toggle" id="searchToggle">
-          <span>🔍 got a cart? find your match</span>
-          <span class="search-toggle-chevron">⌄</span>
-        </button>
-        <div class="search-panel" id="searchPanel" hidden>
-          <label class="field">
-            <span class="field-label">Your cart value (₹)</span>
-            <input type="number" id="sMyValue" min="0" step="1" placeholder="e.g. 80" />
-          </label>
-          <div class="field-row-3">
-            <label class="field">
-              <span class="field-label">Max time left</span>
-              <select id="sMaxTime">
-                <option value="0">any</option>
-                <option value="15">15 min</option>
-                <option value="30">30 min</option>
-                <option value="60">1 hr</option>
-              </select>
-            </label>
-            <label class="field">
-              <span class="field-label">App</span>
-              <select id="sApp">
-                <option value="">any</option>
-                <option value="Blinkit">Blinkit</option>
-                <option value="Zepto">Zepto</option>
-                <option value="Swiggy Instamart">Swiggy Instamart</option>
-                <option value="Swiggy">Swiggy</option>
-                <option value="Zomato">Zomato</option>
-                <option value="BigBasket">BigBasket</option>
-              </select>
-            </label>
-            <label class="field">
-              <span class="field-label">Sort by</span>
-              <select id="sSort">
-                <option value="match">best match</option>
-                <option value="soonest">closing soonest</option>
-                <option value="lowest">least ₹ still needed</option>
-              </select>
-            </label>
-          </div>
-          <button class="btn-ghost btn-block" id="clearSearch">Clear filters</button>
+      <!-- APP FILTER BUBBLES -->
+      <section class="filter-strip">
+        <div class="filter-tabs" id="filterTabs" role="tablist" aria-label="Filter orders by app">
+          <button class="filter-tab" data-filter="Blinkit" data-app="Blinkit" role="tab">
+            <span class="app-dot" data-app="Blinkit" aria-hidden="true">b</span><span>Blinkit</span>
+          </button>
+          <button class="filter-tab" data-filter="Zomato" data-app="Zomato" role="tab">
+            <span class="app-dot" data-app="Zomato" aria-hidden="true">z</span><span>Zomato</span>
+          </button>
+          <button class="filter-tab" data-filter="Swiggy" data-app="Swiggy" role="tab">
+            <span class="app-dot" data-app="Swiggy" aria-hidden="true">s</span><span>Swiggy</span>
+          </button>
+          <button class="filter-tab filter-tab-mine" data-filter="mine" role="tab">
+            <span class="app-dot app-dot-mine" aria-hidden="true">★</span><span>Mine</span>
+          </button>
         </div>
+      </section>
+
+      <!-- SEARCH -->
+      <section class="search-bar" id="searchBar">
+        <div class="search-main">
+          <span class="search-icon" aria-hidden="true">🔍</span>
+          <input type="search" id="sQuery" autocomplete="off" placeholder="Search outlets or items…"
+            aria-label="Search outlets or items" />
+          <button type="button" class="search-clear" id="clearSearch" title="Clear search">×</button>
+        </div>
+        <div class="search-filters">
+          <label class="field">
+            <span class="field-label">Your cart ₹</span>
+            <input type="number" id="sMyValue" min="0" step="1" placeholder="250" />
+          </label>
+          <label class="field">
+            <span class="field-label">Within</span>
+            <select id="sMaxTime">
+              <option value="0">any time</option>
+              <option value="15">15 min</option>
+              <option value="30">30 min</option>
+              <option value="60">1 hr</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Sort</span>
+            <select id="sSort">
+              <option value="match">best match</option>
+              <option value="soonest">soonest</option>
+              <option value="lowest">least ₹</option>
+            </select>
+          </label>
+        </div>
+        <p class="search-hint" id="searchHint"></p>
       </section>
 
       <section class="quick-post" id="quickPost" hidden>
         <div class="quick-post-row">
           <span class="quick-post-label">⚡ Quick post</span>
-          <select id="qpApp" aria-label="App"></select>
+          <select id="qpOutlet" aria-label="Outlet" hidden></select>
           <div class="quick-post-amount">
             <span>₹</span>
-            <input type="number" id="qpTarget" min="1" step="1" placeholder="79" aria-label="Amount needed" />
+            <input type="number" id="qpCurrent" min="0" step="1" placeholder="cart" aria-label="Your cart value" />
+          </div>
+          <div class="quick-post-amount">
+            <span>+₹</span>
+            <input type="number" id="qpTarget" min="1" step="1" placeholder="needed" aria-label="Amount still needed" />
           </div>
           <select id="qpExpiry" aria-label="Closes in">
             <option value="15">15 min</option>
@@ -151,10 +162,7 @@
       </section>
 
       <section class="board-controls">
-        <div class="filter-tabs" id="filterTabs">
-          <button class="filter-tab active" data-filter="all">All orders</button>
-          <button class="filter-tab" data-filter="mine">Mine</button>
-        </div>
+        <p class="board-heading" id="boardHeading"></p>
         <button class="btn btn-primary" id="openPostModal">
           <span>+ Post an order</span>
         </button>
@@ -165,7 +173,7 @@
       </section>
 
       <p class="empty-state" id="emptyState" hidden>
-        The board's empty right now. Be the first — post what you're ordering.
+        Nothing here right now. Be the first — post what you're ordering.
       </p>
 
     </main>
@@ -188,27 +196,39 @@
       </div>
 
       <form id="postForm">
-        <label class="field">
+        <!-- When you're already inside an app's tab, the app is implied —
+             this chip replaces the picker instead of asking again. -->
+        <div class="posting-to" id="postingTo" hidden>
+          <span class="app-dot" id="postingToDot" aria-hidden="true"></span>
+          <span>Posting to <b id="postingToName"></b></span>
+          <button type="button" class="posting-to-change" id="postingToChange">change</button>
+        </div>
+
+        <label class="field" id="appField">
           <span class="field-label">App</span>
           <select id="fApp" required>
             <option value="Blinkit">Blinkit</option>
-            <option value="Zepto">Zepto</option>
-            <option value="Swiggy Instamart">Swiggy Instamart</option>
-            <option value="Swiggy">Swiggy</option>
             <option value="Zomato">Zomato</option>
-            <option value="BigBasket">BigBasket</option>
-            <option value="Other">Other</option>
+            <option value="Swiggy">Swiggy</option>
           </select>
+        </label>
+
+        <label class="field" id="outletField" hidden>
+          <span class="field-label">Outlet / restaurant</span>
+          <select id="fOutlet"></select>
+          <input type="text" id="fOutletOther" maxlength="60" placeholder="Type the outlet name" hidden />
+          <span class="field-hint">Only people ordering from the same outlet can club with you.</span>
         </label>
 
         <div class="field-row">
           <label class="field">
-            <span class="field-label">Extra ₹ needed for free delivery</span>
-            <input type="number" id="fTarget" min="1" step="1" required placeholder="79" />
+            <span class="field-label">Your cart so far (₹)</span>
+            <input type="number" id="fCurrent" min="0" step="1" required placeholder="e.g. 250" />
+            <span class="field-hint">Used to find your matches.</span>
           </label>
           <label class="field">
-            <span class="field-label">Cart value so far (₹) <em>optional</em></span>
-            <input type="number" id="fCurrent" min="0" step="1" placeholder="e.g. 120" />
+            <span class="field-label">Extra ₹ still needed</span>
+            <input type="number" id="fTarget" min="1" step="1" required placeholder="79" />
           </label>
         </div>
 
@@ -244,6 +264,19 @@
 
         <button type="submit" class="btn btn-primary btn-block">Post to the board</button>
       </form>
+    </div>
+  </div>
+
+  <!-- MATCHES MODAL (opens automatically right after posting) -->
+  <div class="modal-backdrop" id="matchModalBackdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="matchModalTitle">
+      <div class="modal-head">
+        <h2 id="matchModalTitle">Your matches</h2>
+        <button class="modal-close" id="closeMatchModal" aria-label="Close">×</button>
+      </div>
+      <p class="match-intro" id="matchIntro"></p>
+      <div class="match-list" id="matchList"></div>
+      <button type="button" class="btn-ghost btn-block" id="dismissMatches">Back to the board</button>
     </div>
   </div>
 

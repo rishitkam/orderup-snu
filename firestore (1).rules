@@ -11,10 +11,22 @@ service cloud.firestore {
       // contact must be a bare 10-digit Indian mobile (starts 6-9). The form
       // normalizes "+91 98765 43210" etc. down to this before writing, so
       // anything else here means the UI was bypassed.
+      //
+      // app must be one of the three we build for, and Zomato/Swiggy orders
+      // must name an outlet — matching is per-outlet on the marketplaces, so
+      // an outlet-less order there could never be clubbed with anything.
       allow create: if request.auth != null &&
                      request.auth.token.email.matches(".*@snu\\.edu\\.in$") &&
                      request.resource.data.contact is string &&
-                     request.resource.data.contact.matches("^[6-9][0-9]{9}$");
+                     request.resource.data.contact.matches("^[6-9][0-9]{9}$") &&
+                     request.resource.data.app in ["Blinkit", "Zomato", "Swiggy"] &&
+                     request.resource.data.outlet is string &&
+                     request.resource.data.current is number &&
+                     request.resource.data.current > 0 &&
+                     request.resource.data.target is number &&
+                     request.resource.data.target > 0 &&
+                     (request.resource.data.app == "Blinkit" ||
+                      request.resource.data.outlet.size() > 0);
 
       allow update, delete:
         if request.auth != null &&

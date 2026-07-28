@@ -17,6 +17,13 @@
 
 * { box-sizing: border-box; }
 
+/* The `hidden` attribute has to win. Any author rule that sets `display` on
+   the same element (`.field { display: block }`, `.posting-to { display: flex }`)
+   beats the UA stylesheet's `[hidden] { display: none }`, which leaves
+   supposedly-hidden fields fully visible — the outlet picker was showing up
+   for Blinkit exactly this way. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;
@@ -227,45 +234,151 @@ a { color: inherit; }
   margin: 0;
 }
 
-/* ---------- smart search ---------- */
-.smart-search {
-  margin: 4px 0 18px;
-}
-.search-toggle {
-  width: 100%;
-  display: flex;
+/* ---------- app identity ----------
+   Each app gets a brand colour that drives its filter bubble, its card accent
+   and its dot. Kept as custom properties so a card can set --app-accent once
+   and everything inside it inherits the right colour. */
+.app-dot {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  background: none;
-  border: 1px dashed var(--line);
-  border-radius: 12px;
-  padding: 11px 16px;
-  font-family: var(--font-body);
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--muted);
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 7px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1;
+  text-transform: lowercase;
+  flex-shrink: 0;
 }
-.search-toggle:hover { border-color: var(--accent2); color: var(--accent2); }
-.search-toggle-chevron { transition: transform 0.2s ease; }
-.search-toggle.open .search-toggle-chevron { transform: rotate(180deg); }
+.app-dot svg {
+  width: 72%;
+  height: 72%;
+  display: block;
+}
+.app-dot[data-app="Blinkit"] { background: #F8CB46; color: #1B2A2F; }
+.app-dot[data-app="Zomato"]  { background: #E23744; color: #fff; }
+.app-dot[data-app="Swiggy"]  { background: #FC8019; color: #fff; }
+.app-dot-mine { background: var(--ink); color: var(--bg); }
 
-.search-panel {
-  margin-top: 10px;
-  padding: 16px;
+/* ---------- filter bubbles ---------- */
+.filter-strip {
+  margin: 4px 0 14px;
+  /* let the row scroll sideways on narrow phones rather than wrapping into
+     two ragged lines — four bubbles don't fit at 360px */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.filter-strip::-webkit-scrollbar { display: none; }
+
+.filter-tabs {
+  display: inline-flex;
+  gap: 8px;
+  min-width: min-content;
+}
+.filter-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  padding: 8px 16px 8px 10px;
+  border-radius: 100px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.filter-tab:hover { border-color: var(--muted); }
+.filter-tab.active {
+  border-color: var(--app-accent, var(--ink));
+  background: var(--app-tint, var(--ink));
+  color: var(--app-on, var(--bg));
+  box-shadow: 0 6px 16px -8px var(--app-accent, rgba(27, 42, 47, 0.5));
+}
+.filter-tab[data-app="Blinkit"] { --app-accent: #F8CB46; --app-tint: #FEF6DC; --app-on: #6B5410; }
+.filter-tab[data-app="Zomato"]  { --app-accent: #E23744; --app-tint: #FCE8EA; --app-on: #8E1F29; }
+.filter-tab[data-app="Swiggy"]  { --app-accent: #FC8019; --app-tint: #FFEEDD; --app-on: #8A4408; }
+
+/* ---------- search ---------- */
+.search-bar {
+  margin: 0 0 18px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  animation: rise 0.25s ease both;
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: var(--shadow);
 }
-.field-row-3 {
+.search-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg);
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  padding: 0 12px;
+  transition: border-color 0.15s;
+}
+.search-main:focus-within { border-color: var(--accent2); }
+.search-icon { font-size: 15px; opacity: 0.7; }
+.search-main input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 13px 0;
+}
+.search-main input:focus { outline: none; }
+.search-main input::-webkit-search-cancel-button { display: none; }
+.search-clear {
+  border: none;
+  background: none;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 2px;
+  visibility: hidden;
+}
+.search-bar.has-query .search-clear { visibility: visible; }
+
+.search-filters {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
-  gap: 10px;
+  gap: 8px;
+  margin-top: 10px;
 }
-@media (max-width: 480px) {
-  .field-row-3 { grid-template-columns: 1fr; }
+.search-filters .field { margin-bottom: 0; min-width: 0; }
+.search-filters .field input,
+.search-filters .field select {
+  padding: 9px 10px;
+  font-size: 14px;
+  background: var(--bg);
+}
+/* Stay three-up even on small phones — stacking these pushed the board
+   itself below the fold, which defeats the point of the board. */
+@media (max-width: 520px) {
+  .search-filters { gap: 6px; }
+  .search-filters .field-label { font-size: 11px; }
+  .search-filters .field input,
+  .search-filters .field select { padding: 8px 7px; font-size: 13px; }
+}
+.search-hint {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--accent2);
+  font-weight: 600;
+  min-height: 16px;
 }
 
 .card.matched {
@@ -354,27 +467,13 @@ a { color: inherit; }
   margin: 12px 0 20px;
   flex-wrap: wrap;
 }
-.filter-tabs {
-  display: flex;
-  gap: 6px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 100px;
-  padding: 4px;
-}
-.filter-tab {
-  border: none;
-  background: none;
-  font-family: var(--font-body);
+.board-heading {
+  margin: 0;
+  font-family: var(--font-display);
   font-weight: 600;
-  font-size: 13px;
-  color: var(--muted);
-  padding: 7px 16px;
-  border-radius: 100px;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  font-size: 19px;
+  color: var(--ink);
 }
-.filter-tab.active { background: var(--ink); color: var(--bg); }
 
 .btn {
   font-family: var(--font-body);
@@ -460,10 +559,33 @@ a { color: inherit; }
   flex-wrap: wrap;
 }
 .card-app {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 18px;
+  min-width: 0;
 }
+.card-outlet {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--ink-soft);
+  background: var(--bg);
+  border-radius: 100px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+/* left edge of the card carries the app's colour so the board stays readable
+   when several apps are mixed together (the "Mine" tab) */
+.card { border-left: 4px solid var(--app-accent, var(--line)); }
+.card[data-app="Blinkit"] { --app-accent: #F8CB46; }
+.card[data-app="Zomato"]  { --app-accent: #E23744; }
+.card[data-app="Swiggy"]  { --app-accent: #FC8019; }
 .card-timer {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -540,6 +662,112 @@ a { color: inherit; }
   box-shadow: none;
 }
 .wa-link:hover { background: #20bd5a; }
+
+/* ---------- matches ---------- */
+.card-matches {
+  margin-top: 10px;
+  border-top: 1px dashed var(--line);
+  padding-top: 10px;
+}
+.card-matches summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent2);
+  list-style: none;
+}
+.card-matches summary::-webkit-details-marker { display: none; }
+.card-matches summary::before {
+  content: "▸ ";
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+.card-matches[open] summary::before { content: "▾ "; }
+
+.match-list { display: flex; flex-direction: column; gap: 8px; }
+.card-matches .match-list { margin-top: 9px; }
+
+.match-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #F3F8F5;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.match-row-main { flex: 1; min-width: 0; }
+.match-row-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.match-row-sub {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+/* Deliberately NOT .wa-link — this button opts you in and reveals the number.
+   The green WhatsApp button appears afterwards, in its place. */
+.match-cta {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.match-row .wa-link { margin-top: 8px; }
+.mutual-badge {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #7A4A00;
+  background: #FFF0D4;
+  border-radius: 100px;
+  padding: 2px 8px;
+}
+.match-intro {
+  margin: 0 0 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.match-empty {
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 20px 8px;
+}
+
+/* ---------- "posting to" chip ---------- */
+.posting-to {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 11px 13px;
+  font-size: 14px;
+  color: var(--ink-soft);
+  margin-bottom: 14px;
+}
+.posting-to b { color: var(--ink); }
+.posting-to-change {
+  margin-left: auto;
+  background: none;
+  border: none;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent2);
+  cursor: pointer;
+  text-decoration: underline;
+}
 
 .empty-state {
   text-align: center;
@@ -682,4 +910,26 @@ button:focus-visible, a:focus-visible {
   .card { grid-template-columns: 64px 1fr; padding: 14px; }
   .amount-block { width: 64px; padding: 8px 4px; }
   .amount-value { font-size: 16px; }
+
+  /* Get the board closer to the top: the hero is nice, but it isn't why
+     anyone opened the app. */
+  .hero { padding: 28px 0 20px; }
+  .hero-sub { font-size: 15px; }
+
+  /* All four bubbles — including "Mine" — must fit on a 360px screen. A tab
+     you can only reach by discovering a horizontal scroll is a tab most
+     people never find. Bleed the strip into the wrap's gutters for the extra
+     40px, and trim the bubbles to cover the rest. */
+  .filter-strip {
+    margin-left: -20px;
+    margin-right: -20px;
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .filter-tabs { gap: 5px; }
+  .filter-tab { font-size: 11.5px; padding: 7px 10px 7px 7px; gap: 5px; }
+  .app-dot { width: 16px; height: 16px; font-size: 10px; border-radius: 5px; }
+
+  .match-row { flex-wrap: wrap; }
+  .match-cta { width: 100%; }
 }

@@ -1,7 +1,23 @@
-# OrderUp — order-splitting board for your college
+# OrderUp — order-clubbing board for your college
 
-A tiny site where students post "I need ₹X more for free delivery" and others
-jump in. Live, shared, free to host, and installable as an app on phones.
+A tiny site where students post "my cart is at ₹X, I need ₹Y more" and get
+matched with someone whose order fits theirs. Clubbing two carts crosses the
+free-delivery minimum — or the cart size that unlocks the big promo codes —
+without either person adding filler items. Live, shared, free to host, and
+installable as an app on phones.
+
+**Three apps, one board.** Blinkit, Zomato and Swiggy each get their own filter
+bubble, plus a "Mine" tab for your own posts across all three. Blinkit is a
+single storefront so there's nothing more to ask. Zomato and Swiggy are
+marketplaces, so those orders also name an **outlet** — matching is per-outlet
+there, because two Zomato carts from different restaurants are still two
+deliveries.
+
+**Matching.** Someone is a match if the extra amount they still need is already
+covered by your cart: they need ₹150 more, your cart is at ₹250, so clubbing
+pushes them over. When that's true in both directions it's a *mutual* match —
+you each cross your own threshold — and those are listed first. Matches appear
+automatically in a popup the moment you post, and in a drawer on every card.
 
 ## What's in this folder
 
@@ -87,13 +103,18 @@ Once installed it opens full-screen with its own icon, no browser bar — feels 
 
 - **Google Sign-In, no password** — one tap, and Firebase gives us the student's real name for free (`displayName`). `firestore.rules` enforces the `@snu.edu.in` domain check server-side too, not just in the UI.
 - **The board updates in place, not by rebuilding itself** — every live update only touches the cards that actually changed, so posting or the board refreshing doesn't cause the whole page to flash.
-- **Contact info is only revealed when someone taps "I'm in"** — keeps casual browsers from seeing everyone's WhatsApp number.
+- **Contact info is only revealed when someone taps "I'm in"** — keeps casual browsers from seeing everyone's WhatsApp number. Match rows follow the same rule: the "I'm in" button there records the join first, *then* reveals the number. Nothing anywhere renders a contact until someone opts in.
+- **Contacts must be 10-digit Indian mobiles** — every contact ends up in a `wa.me` link, so Instagram handles and room numbers are rejected. `normalizePhone()` in `app.js` is the only place that decides this, and `firestore.rules` enforces the same `^[6-9][0-9]{9}$` server-side.
+- **Cart value is required** — matching is impossible without it, since a match is defined in terms of what your cart already covers.
+- **Outlets are a dropdown of popular places first, free text second** — matching compares outlet names, so letting everyone type freely would fragment "Domino's" into a dozen non-matching spellings. Comparison is done on a normalized key (`outletKey()`), so "Domino's Pizza" and "dominos pizza" still club together.
+- **Matching always runs against every live order, not just the visible ones** — filtering or searching the board changes what you see, never who can actually club with whom.
 - **Orders auto-expire** — set by the poster (15 min to 2 hrs), so the board never fills with stale posts.
-- **Anyone can delete their own post; anyone can delete an expired post** — simplest possible moderation model for a first version. If abuse becomes a problem, add real auth and restrict deletes to `posterId == auth.uid`.
+- **Deletes are restricted to the poster** — `firestore.rules` requires `resource.data.posterId == request.auth.uid`. Expired posts are filtered out of the board client-side immediately, but only actually deleted from Firestore when their own poster next opens the app.
 
 ## Reasonable next steps (not built yet, easy to add later)
 
-- Push notifications when someone joins your order
+- Push notifications when someone joins your order (the `orders/{id}/joins` subcollection is already being written for exactly this)
 - Per-hostel filtering if your college has multiple
+- Swap in official brand assets if you ever want pixel-exact logos — the current marks (Blinkit's bolt, Zomato's Z, Swiggy's S) are hand-drawn SVG in the `APP_ICONS` map at the top of `app.js`. They're inline so they work offline and need no network request; replacing one entry there updates the filter bubbles, the cards and the post modal at once.
 
 Feel free to ask me to add any of these once the base version is live.

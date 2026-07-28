@@ -11,6 +11,60 @@ import {
 const ORDERS_COL = "orders";
 const IS_MOBILE = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
+/* ---------------- apps ----------------
+   Three apps, deliberately. Blinkit is a single storefront so there's nothing
+   to disambiguate; Zomato and Swiggy are marketplaces, so an order only clubs
+   with another order from the *same outlet*. */
+const APPS = {
+  Blinkit: { label: "Blinkit", initial: "b", needsOutlet: false },
+  Zomato: { label: "Zomato", initial: "z", needsOutlet: true },
+  Swiggy: { label: "Swiggy", initial: "s", needsOutlet: true }
+};
+const DEFAULT_APP = "Blinkit";
+
+// Pre-loaded because free text fragments outlet names, and matching depends on
+// two people naming the same outlet the same way. "Other" stays available.
+const POPULAR_OUTLETS = [
+  "Domino's Pizza", "California Burrito", "McDonald's", "Burger King",
+  "KFC", "Subway", "Pizza Hut", "Wow! Momo", "Behrouz Biryani",
+  "Chaayos", "Theobroma", "Haldiram's", "Rolls Mania", "Biryani Blues"
+];
+const OUTLET_OTHER = "__other__";
+
+/* Brand marks, drawn as inline SVG so they work offline and inside the service
+   worker cache — no external image requests. Each uses currentColor, so the
+   colour comes from the .app-dot rule in style.css and stays correct on any
+   background. To swap in an official asset, replace one entry here: nothing
+   else in the codebase references these shapes. */
+const APP_ICONS = {
+  // Blinkit — lightning bolt (their "instant delivery" mark)
+  Blinkit: `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M13.4 1.9 5.7 13.2c-.3.4 0 1 .5 1h3.9l-1.4 7.3c-.1.5.6.8.9.4l7.8-11.3c.3-.4 0-1-.5-1h-3.9l1.3-7.3c.1-.5-.6-.8-.9-.4z"/></svg>`,
+  // Zomato — the Z letterform
+  Zomato: `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M5.3 3.6h13.4v3L10 17.4h8.7v3H5.3v-3l8.7-10.8H5.3z"/></svg>`,
+  // Swiggy — the S curve
+  Swiggy: `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2.9" stroke-linecap="round" d="M16.8 6.4C15.5 5.1 13.9 4.5 12 4.5c-2.7 0-4.5 1.4-4.5 3.4 0 4 9.1 2.3 9.1 6.6 0 2.2-2 3.7-4.8 3.7-2.1 0-4-.9-5.3-2.4"/></svg>`
+};
+
+const isKnownApp = (app) => Object.prototype.hasOwnProperty.call(APPS, app);
+const appNeedsOutlet = (app) => !!(APPS[app] && APPS[app].needsOutlet);
+const appInitial = (app) => (APPS[app] ? APPS[app].initial : "?");
+// Falls back to the letter mark if an app somehow has no icon.
+const appIconHTML = (app) => APP_ICONS[app] || escapeHtml(appInitial(app));
+
+// The filter bubbles ship with letter marks in the HTML as a no-JS fallback;
+// this upgrades them to the real logos once the module runs.
+function paintAppIcons(root) {
+  (root || document).querySelectorAll(".app-dot[data-app]").forEach(el => {
+    const icon = APP_ICONS[el.dataset.app];
+    if (icon) el.innerHTML = icon;
+  });
+}
+
+// Compared loosely so "Domino's Pizza" and "dominos pizza" still club together.
+function outletKey(outlet) {
+  return String(outlet || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 /* ---------------- identity: comes from a verified @{ALLOWED_DOMAIN} Google login ---------------- */
 let myId = null;
 let myEmail = null;
@@ -20,7 +74,6 @@ let myName = null;
 const loginGate = document.getElementById("loginGate");
 const appRoot = document.getElementById("appRoot");
 const googleSignInBtn = document.getElementById("googleSignInBtn");
-const loginSub = document.getElementById("loginSub");
 const loginNote = document.getElementById("loginNote");
 const loginDiag = document.getElementById("loginDiag");
 const loginDiagBody = document.getElementById("loginDiagBody");
@@ -165,6 +218,8 @@ onAuthStateChanged(auth, (user) => {
     showLoginNote("", false);
     loginGate.hidden = true;
     appRoot.hidden = false;
+    currentFilter = isKnownApp(getSavedApp()) ? getSavedApp() : DEFAULT_APP;
+    applyFilterUI();
     refreshQuickPostBar();
     startOrdersListener(); // only start reading once we actually have a valid, verified auth token
   } else {
@@ -184,7 +239,7 @@ onAuthStateChanged(auth, (user) => {
 
 function getMyName() { return myName || ""; }
 
-/* ---------------- remembered defaults (contact, location, last app/expiry) ---------------- */
+/* ---------------- remembered defaults ---------------- */
 function fieldKey(field) {
   return `orderup_${field}_${(myEmail || "").toLowerCase()}`;
 }
@@ -210,6 +265,8 @@ const getSavedApp = () => getSavedField("app");
 const saveApp = (v) => saveField("app", v);
 const getSavedExpiry = () => getSavedField("expiry");
 const saveExpiry = (v) => saveField("expiry", v);
+const getSavedOutlet = () => getSavedField("outlet");
+const saveOutlet = (v) => saveField("outlet", v);
 
 function hasQuickPostDefaults() {
   // A contact saved before numbers were required could be an Instagram handle
@@ -219,83 +276,45 @@ function hasQuickPostDefaults() {
   return !!(normalizePhone(getSavedContact()) && getSavedLocation());
 }
 
-/* ---------------- quick post bar ---------------- */
-const quickPost = document.getElementById("quickPost");
-const qpApp = document.getElementById("qpApp");
-const qpTarget = document.getElementById("qpTarget");
-const qpExpiry = document.getElementById("qpExpiry");
-const qpSubmit = document.getElementById("qpSubmit");
-const quickPostNote = document.getElementById("quickPostNote");
+/* ---------------- matching ----------------
+   A match is someone whose remaining need is already covered by my cart: they
+   need ₹150 more, my cart is at ₹250, so clubbing pushes them over the line.
+   When that holds in *both* directions it's a mutual match — we each cross our
+   own threshold — which is the outcome actually worth surfacing first.
 
-// mirror the same app options as the full form, so they stay in sync
-qpApp.innerHTML = document.getElementById("fApp").innerHTML;
-
-function refreshQuickPostBar() {
-  if (!hasQuickPostDefaults()) {
-    quickPost.hidden = true;
-    return;
-  }
-  quickPost.hidden = false;
-  const savedApp = getSavedApp();
-  if (savedApp) qpApp.value = savedApp;
-  const savedExpiry = getSavedExpiry();
-  if (savedExpiry) qpExpiry.value = savedExpiry;
-  quickPostNote.textContent = `Posts to ${getSavedLocation()} · reachable at ${normalizePhone(getSavedContact())}. Tap "Post an order" to change these.`;
+   Clubbing only makes sense within one app, and on the marketplaces (Zomato,
+   Swiggy) only within one outlet: two Zomato carts from different restaurants
+   are two separate orders with two separate delivery fees. */
+function canClub(mine, theirs) {
+  if (!mine || !theirs) return false;
+  if (mine.id && theirs.id && mine.id === theirs.id) return false;
+  if (mine.posterId && mine.posterId === theirs.posterId) return false;
+  if (mine.app !== theirs.app) return false;
+  if (appNeedsOutlet(mine.app) && outletKey(mine.outlet) !== outletKey(theirs.outlet)) return false;
+  return (Number(theirs.target) || 0) <= (Number(mine.current) || 0);
 }
 
-qpSubmit.addEventListener("click", async () => {
-  const target = Number(qpTarget.value);
-  if (!target || target <= 0) {
-    toast("Enter how much ₹ is needed first");
-    qpTarget.focus();
-    return;
-  }
-  const savedContact = normalizePhone(getSavedContact());
-  if (!savedContact) {
-    toast("Add your mobile number first — tap \"Post an order\"");
-    return;
-  }
+function isMutualMatch(a, b) {
+  return canClub(a, b) && canClub(b, a);
+}
 
-  const minutes = Number(qpExpiry.value);
-  const expiresAt = Date.now() + minutes * 60 * 1000;
-  const appVal = qpApp.value;
-
-  const payload = {
-    app: appVal,
-    current: 0,
-    target,
-    items: "",
-    location: getSavedLocation(),
-    contact: savedContact,
-    posterId: myId,
-    posterName: getMyName(),
-    posterEmail: myEmail,
-    createdAt: serverTimestamp(),
-    expiresAt
-  };
-
-  qpSubmit.disabled = true;
-  try {
-    await addDoc(collection(db, ORDERS_COL), payload);
-    saveApp(appVal);
-    saveExpiry(qpExpiry.value);
-    qpTarget.value = "";
-    toast("Posted to the board 🎉");
-  } catch (err) {
-    console.error(err);
-    toast("Couldn't post — check your Firebase setup");
-  } finally {
-    qpSubmit.disabled = false;
-  }
-});
-
-qpTarget.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") { e.preventDefault(); qpSubmit.click(); }
-});
+function matchesFor(order, pool) {
+  return pool
+    .filter(o => canClub(order, o))
+    .sort((x, y) => {
+      // mutual matches first — those are the ones where both people win
+      const mx = isMutualMatch(order, x) ? 0 : 1;
+      const my = isMutualMatch(order, y) ? 0 : 1;
+      if (mx !== my) return mx - my;
+      // then whoever's need our cart covers most comfortably
+      return (Number(y.target) || 0) - (Number(x.target) || 0);
+    });
+}
 
 /* ---------------- DOM refs: app ---------------- */
 const board = document.getElementById("board");
 const emptyState = document.getElementById("emptyState");
+const boardHeading = document.getElementById("boardHeading");
 const toastEl = document.getElementById("toast");
 
 const postModalBackdrop = document.getElementById("postModalBackdrop");
@@ -303,34 +322,43 @@ const openPostModalBtn = document.getElementById("openPostModal");
 const closePostModalBtn = document.getElementById("closePostModal");
 const postForm = document.getElementById("postForm");
 
+const fApp = document.getElementById("fApp");
+const fOutlet = document.getElementById("fOutlet");
+const fOutletOther = document.getElementById("fOutletOther");
+const outletField = document.getElementById("outletField");
+const appField = document.getElementById("appField");
+const postingTo = document.getElementById("postingTo");
+const postingToDot = document.getElementById("postingToDot");
+const postingToName = document.getElementById("postingToName");
+const postingToChange = document.getElementById("postingToChange");
+
+const matchModalBackdrop = document.getElementById("matchModalBackdrop");
+const closeMatchModalBtn = document.getElementById("closeMatchModal");
+const dismissMatchesBtn = document.getElementById("dismissMatches");
+const matchIntro = document.getElementById("matchIntro");
+const matchList = document.getElementById("matchList");
+
 const filterTabs = document.getElementById("filterTabs");
-let currentFilter = "all";
+let currentFilter = DEFAULT_APP;   // "Blinkit" | "Zomato" | "Swiggy" | "mine"
 let latestOrders = [];
 
-/* ---------------- smart search ---------------- */
-const searchToggle = document.getElementById("searchToggle");
-const searchPanel = document.getElementById("searchPanel");
+/* ---------------- search ---------------- */
+const searchBar = document.getElementById("searchBar");
+const sQuery = document.getElementById("sQuery");
 const sMyValue = document.getElementById("sMyValue");
 const sMaxTime = document.getElementById("sMaxTime");
-const sApp = document.getElementById("sApp");
 const sSort = document.getElementById("sSort");
 const clearSearchBtn = document.getElementById("clearSearch");
+const searchHint = document.getElementById("searchHint");
 
-searchToggle.addEventListener("click", () => {
-  const isHidden = searchPanel.hidden;
-  searchPanel.hidden = !isHidden;
-  searchToggle.classList.toggle("open", isHidden);
-});
-[sMyValue, sMaxTime, sApp, sSort].forEach(el => {
+[sQuery, sMyValue, sMaxTime, sSort].forEach(el => {
   el.addEventListener("input", render);
   el.addEventListener("change", render);
 });
 clearSearchBtn.addEventListener("click", () => {
-  sMyValue.value = "";
-  sMaxTime.value = "0";
-  sApp.value = "";
-  sSort.value = "match";
+  sQuery.value = "";
   render();
+  sQuery.focus();
 });
 
 /* ---------------- toast ---------------- */
@@ -345,10 +373,79 @@ function toast(msg) {
 function openModal(el) { el.classList.add("open"); }
 function closeModal(el) { el.classList.remove("open"); }
 
-openPostModalBtn.addEventListener("click", () => {
+/* ---------------- filter tabs ---------------- */
+function applyFilterUI() {
+  [...filterTabs.children].forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.filter === currentFilter);
+  });
+
+  const isMine = currentFilter === "mine";
+  boardHeading.textContent = isMine ? "Your orders" : `${currentFilter} orders`;
+
+  // Searching outlets only means anything on the marketplaces.
+  if (isMine) {
+    sQuery.placeholder = "Search your orders…";
+  } else if (appNeedsOutlet(currentFilter)) {
+    sQuery.placeholder = `Search ${currentFilter} outlets…`;
+  } else {
+    sQuery.placeholder = `Search ${currentFilter} items…`;
+  }
+
+  refreshQuickPostBar();
+}
+
+filterTabs.addEventListener("click", (e) => {
+  const btn = e.target.closest(".filter-tab");
+  if (!btn) return;
+  currentFilter = btn.dataset.filter;
+  if (isKnownApp(currentFilter)) saveApp(currentFilter);
+  applyFilterUI();
+  render();
+});
+
+/* ---------------- outlet picker ---------------- */
+function populateOutletSelect(sel, selectedOutlet) {
+  const known = POPULAR_OUTLETS.slice();
+  // If they previously typed a custom outlet, keep it selectable rather than
+  // making them retype it every time.
+  if (selectedOutlet && !known.some(o => outletKey(o) === outletKey(selectedOutlet))) {
+    known.push(selectedOutlet);
+  }
+  sel.innerHTML = known.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join("")
+    + `<option value="${OUTLET_OTHER}">Other — type it in</option>`;
+  if (selectedOutlet) sel.value = selectedOutlet;
+}
+
+function syncOutletField(app, preferredOutlet) {
+  const needs = appNeedsOutlet(app);
+  outletField.hidden = !needs;
+  if (!needs) {
+    fOutletOther.hidden = true;
+    return;
+  }
+  populateOutletSelect(fOutlet, preferredOutlet || getSavedOutlet());
+  fOutletOther.hidden = fOutlet.value !== OUTLET_OTHER;
+}
+
+fOutlet.addEventListener("change", () => {
+  const other = fOutlet.value === OUTLET_OTHER;
+  fOutletOther.hidden = !other;
+  if (other) fOutletOther.focus();
+});
+
+fApp.addEventListener("change", () => syncOutletField(fApp.value));
+
+// Reads whichever of the two controls is actually in play.
+function readOutlet() {
+  if (!appNeedsOutlet(fApp.value)) return "";
+  if (fOutlet.value === OUTLET_OTHER) return fOutletOther.value.trim();
+  return fOutlet.value;
+}
+
+/* ---------------- post modal ---------------- */
+function openPostModal() {
   const fContact = document.getElementById("fContact");
   const fLocation = document.getElementById("fLocation");
-  const fApp = document.getElementById("fApp");
   const fExpiry = document.getElementById("fExpiry");
   const contactHint = document.getElementById("contactHint");
   const locationHint = document.getElementById("locationHint");
@@ -361,12 +458,40 @@ openPostModalBtn.addEventListener("click", () => {
     const saved = getSavedLocation();
     if (saved) { fLocation.value = saved; locationHint.hidden = false; }
   }
-  const savedApp = getSavedApp();
-  if (savedApp) fApp.value = savedApp;
   const savedExpiry = getSavedExpiry();
   if (savedExpiry) fExpiry.value = savedExpiry;
 
+  // Inside an app tab the app is already decided — show it as a chip instead
+  // of asking a question the user has effectively just answered.
+  if (isKnownApp(currentFilter)) {
+    fApp.value = currentFilter;
+    showPostingToChip(currentFilter);
+  } else {
+    const savedApp = getSavedApp();
+    if (isKnownApp(savedApp)) fApp.value = savedApp;
+    hidePostingToChip();
+  }
+
+  syncOutletField(fApp.value);
   openModal(postModalBackdrop);
+}
+
+function showPostingToChip(app) {
+  postingTo.hidden = false;
+  appField.hidden = true;
+  postingToDot.dataset.app = app;
+  postingToDot.innerHTML = appIconHTML(app);
+  postingToName.textContent = app;
+}
+function hidePostingToChip() {
+  postingTo.hidden = true;
+  appField.hidden = false;
+}
+
+openPostModalBtn.addEventListener("click", openPostModal);
+postingToChange.addEventListener("click", () => {
+  hidePostingToChip();
+  fApp.focus();
 });
 
 // hide the "remembered" hints as soon as they start editing them
@@ -381,24 +506,134 @@ postModalBackdrop.addEventListener("click", (e) => {
   if (e.target === postModalBackdrop) closeModal(postModalBackdrop);
 });
 
-/* ---------------- filter tabs ---------------- */
-filterTabs.addEventListener("click", (e) => {
-  const btn = e.target.closest(".filter-tab");
-  if (!btn) return;
-  [...filterTabs.children].forEach(c => c.classList.remove("active"));
-  btn.classList.add("active");
-  currentFilter = btn.dataset.filter;
-  render();
+closeMatchModalBtn.addEventListener("click", () => closeModal(matchModalBackdrop));
+dismissMatchesBtn.addEventListener("click", () => closeModal(matchModalBackdrop));
+matchModalBackdrop.addEventListener("click", (e) => {
+  if (e.target === matchModalBackdrop) closeModal(matchModalBackdrop);
+});
+
+/* ---------------- quick post ---------------- */
+const quickPost = document.getElementById("quickPost");
+const qpOutlet = document.getElementById("qpOutlet");
+const qpCurrent = document.getElementById("qpCurrent");
+const qpTarget = document.getElementById("qpTarget");
+const qpExpiry = document.getElementById("qpExpiry");
+const qpSubmit = document.getElementById("qpSubmit");
+const quickPostNote = document.getElementById("quickPostNote");
+
+function refreshQuickPostBar() {
+  // Quick post is a shortcut for "same as last time, new amount". It only
+  // makes sense inside an app tab — under "Mine" there's no app to post to.
+  if (!hasQuickPostDefaults() || !isKnownApp(currentFilter)) {
+    quickPost.hidden = true;
+    return;
+  }
+  quickPost.hidden = false;
+
+  const needsOutlet = appNeedsOutlet(currentFilter);
+  qpOutlet.hidden = !needsOutlet;
+  if (needsOutlet) populateOutletSelect(qpOutlet, getSavedOutlet());
+
+  const savedExpiry = getSavedExpiry();
+  if (savedExpiry) qpExpiry.value = savedExpiry;
+
+  quickPostNote.textContent =
+    `Posts to ${currentFilter} · ${getSavedLocation()} · reachable at ${normalizePhone(getSavedContact())}. ` +
+    `Tap "Post an order" to change these.`;
+}
+
+qpSubmit.addEventListener("click", async () => {
+  const target = Number(qpTarget.value);
+  if (!target || target <= 0) {
+    toast("Enter how much ₹ is still needed");
+    qpTarget.focus();
+    return;
+  }
+  const current = Number(qpCurrent.value);
+  if (!current || current <= 0) {
+    toast("Enter your cart value so we can find matches");
+    qpCurrent.focus();
+    return;
+  }
+  const savedContact = normalizePhone(getSavedContact());
+  if (!savedContact) {
+    toast("Add your mobile number first — tap \"Post an order\"");
+    return;
+  }
+
+  const appVal = currentFilter;
+  let outlet = "";
+  if (appNeedsOutlet(appVal)) {
+    outlet = qpOutlet.value === OUTLET_OTHER ? "" : qpOutlet.value;
+    if (!outlet) {
+      toast("Pick an outlet — tap \"Post an order\" to type a new one");
+      return;
+    }
+  }
+
+  const minutes = Number(qpExpiry.value);
+  const payload = {
+    app: appVal,
+    outlet,
+    current,
+    target,
+    items: "",
+    location: getSavedLocation(),
+    contact: savedContact,
+    posterId: myId,
+    posterName: getMyName(),
+    posterEmail: myEmail,
+    createdAt: serverTimestamp(),
+    expiresAt: Date.now() + minutes * 60 * 1000
+  };
+
+  qpSubmit.disabled = true;
+  try {
+    await addDoc(collection(db, ORDERS_COL), payload);
+    saveExpiry(qpExpiry.value);
+    if (outlet) saveOutlet(outlet);
+    qpTarget.value = "";
+    qpCurrent.value = "";
+    toast("Posted to the board 🎉");
+    showMatchesFor(payload);
+  } catch (err) {
+    console.error(err);
+    toast("Couldn't post — check your Firebase setup");
+  } finally {
+    qpSubmit.disabled = false;
+  }
+});
+
+[qpTarget, qpCurrent].forEach(el => {
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); qpSubmit.click(); }
+  });
 });
 
 /* ---------------- post order ---------------- */
 postForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const currentRaw = document.getElementById("fCurrent").value;
-  const current = currentRaw === "" ? 0 : Number(currentRaw);
+
+  const appVal = fApp.value;
+  if (!isKnownApp(appVal)) { toast("Pick an app"); return; }
+
+  const outlet = readOutlet();
+  if (appNeedsOutlet(appVal) && !outlet) {
+    toast("Which outlet? Pick one or type it in");
+    (fOutletOther.hidden ? fOutlet : fOutletOther).focus();
+    return;
+  }
+
+  const currentInput = document.getElementById("fCurrent");
+  const current = Number(currentInput.value);
+  if (!current || current <= 0) {
+    toast("Enter your cart value — it's what finds your matches");
+    currentInput.focus();
+    return;
+  }
+
   const target = Number(document.getElementById("fTarget").value);
   const minutes = Number(document.getElementById("fExpiry").value);
-  const expiresAt = Date.now() + minutes * 60 * 1000;
 
   const contactInput = document.getElementById("fContact");
   const contact = normalizePhone(contactInput.value);
@@ -409,11 +644,11 @@ postForm.addEventListener("submit", async (e) => {
   }
 
   const location = document.getElementById("fLocation").value.trim();
-  const appVal = document.getElementById("fApp").value;
   const expiryVal = document.getElementById("fExpiry").value;
 
   const payload = {
     app: appVal,
+    outlet,
     current,
     target,
     items: document.getElementById("fItems").value.trim(),
@@ -423,7 +658,7 @@ postForm.addEventListener("submit", async (e) => {
     posterName: getMyName(),
     posterEmail: myEmail,
     createdAt: serverTimestamp(),
-    expiresAt
+    expiresAt: Date.now() + minutes * 60 * 1000
   };
 
   try {
@@ -432,17 +667,87 @@ postForm.addEventListener("submit", async (e) => {
     saveLocation(location);
     saveApp(appVal);
     saveExpiry(expiryVal);
+    if (outlet) saveOutlet(outlet);
     postForm.reset();
     document.getElementById("contactHint").hidden = true;
     document.getElementById("locationHint").hidden = true;
     closeModal(postModalBackdrop);
     toast("Posted to the board 🎉");
     refreshQuickPostBar();
+    showMatchesFor(payload);
   } catch (err) {
     console.error(err);
     toast("Couldn't post — check your Firebase setup");
   }
 });
+
+/* ---------------- matches modal ----------------
+   Opens by itself right after a successful post: the whole point of posting is
+   to find someone, so the answer shouldn't be one more tap away. */
+function showMatchesFor(order) {
+  const now = Date.now();
+  const pool = latestOrders.filter(o => (o.expiresAt || 0) > now);
+  const matches = matchesFor(order, pool);
+
+  const where = order.outlet ? `${order.app} · ${order.outlet}` : order.app;
+
+  if (!matches.length) {
+    matchIntro.textContent =
+      `Posted to ${where}. Nobody matches your ₹${order.current} cart yet — you'll show up on their board, ` +
+      `so sit tight or check back in a few minutes.`;
+    matchList.innerHTML = `<p class="match-empty">No matches right now.</p>`;
+  } else {
+    const mutual = matches.filter(m => isMutualMatch(order, m)).length;
+    matchIntro.textContent =
+      `Posted to ${where}. ${matches.length} ${matches.length === 1 ? "person" : "people"} ` +
+      `can club with your ₹${order.current} cart` +
+      (mutual ? ` — ${mutual} where you both cross the line.` : ".");
+    matchList.innerHTML = matches.map(m => matchRowHTML(m, order)).join("");
+    wireMatchRows(matchList, matches);
+  }
+
+  openModal(matchModalBackdrop);
+}
+
+function matchRowHTML(m, against) {
+  const { label } = timeLeftLabel(m.expiresAt);
+  const mutual = against ? isMutualMatch(against, m) : false;
+  return `
+    <div class="match-row" data-match-id="${escapeHtml(m.id)}">
+      <div class="match-row-main">
+        <div class="match-row-name">
+          ${escapeHtml(m.posterName || "someone")}
+          ${mutual ? '<span class="mutual-badge">you both benefit</span>' : ""}
+        </div>
+        <div class="match-row-sub">
+          needs ₹${Number(m.target) || 0} · cart ₹${Number(m.current) || 0} · ${label} · ${escapeHtml(m.location || "")}
+        </div>
+      </div>
+      <button type="button" class="btn btn-primary match-cta" data-reveal="${escapeHtml(m.id)}">I'm in</button>
+    </div>`;
+}
+
+// Contact stays hidden until someone actively opts in — same rule as the board
+// cards. Tapping here records the join and then reveals the number.
+function wireMatchRows(container, orders) {
+  container.querySelectorAll("[data-reveal]").forEach(btn => {
+    const id = btn.dataset.reveal;
+    const order = orders.find(o => o.id === id);
+    if (!order) return;
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      btn.textContent = "…";
+      await recordJoin(order);
+      const row = btn.closest(".match-row");
+      btn.remove();
+      const slot = document.createElement("div");
+      slot.style.width = "100%";
+      revealContactInto(slot, order);
+      row.appendChild(slot);
+      row.style.flexWrap = "wrap";
+    });
+  });
+}
 
 /* ---------------- realtime listener ---------------- */
 let unsubscribeOrders = null;
@@ -486,22 +791,32 @@ function amountBlock(needed) {
     </div>`;
 }
 
-function cardInnerHTML(o, now, myValue) {
-  const current = o.current || 0;
-  const needed = o.target;
+function cardInnerHTML(o, myValue, pool) {
+  const current = Number(o.current) || 0;
+  const needed = Number(o.target) || 0;
   const { label, urgent } = timeLeftLabel(o.expiresAt);
   const isMine = o.posterId === myId;
   const isGoodMatch = myValue !== null && needed <= myValue;
+
+  // Matches are only ever shown on your OWN posts. Everyone else's matches
+  // are their business — and surfacing them on every card turned the board
+  // into a wall of nested lists.
+  const matches = isMine ? matchesFor(o, pool) : [];
 
   return `
       ${amountBlock(needed)}
       <div class="card-body">
         <div class="card-top">
-          <span class="card-app">${escapeHtml(o.app)}${isGoodMatch ? '<span class="match-badge">fits your cart</span>' : ""}</span>
+          <span class="card-app">
+            <span class="app-dot" data-app="${escapeHtml(o.app)}">${appIconHTML(o.app)}</span>
+            <span>${escapeHtml(o.app)}</span>
+            ${o.outlet ? `<span class="card-outlet">${escapeHtml(o.outlet)}</span>` : ""}
+            ${isGoodMatch ? '<span class="match-badge">fits your cart</span>' : ""}
+          </span>
           <span class="card-timer ${urgent ? "urgent" : ""}">${label}</span>
         </div>
         <div class="card-amounts">
-          ${current > 0 ? `cart's at <b>₹${current}</b> · ` : ""}needs <b>₹${needed}</b> more to unlock free delivery
+          ${current > 0 ? `cart's at <b>₹${current}</b> · ` : ""}needs <b>₹${needed}</b> more
         </div>
         ${o.items ? `<p class="card-items">${escapeHtml(o.items)}</p>` : ""}
         <div class="card-meta">
@@ -515,36 +830,46 @@ function cardInnerHTML(o, now, myValue) {
     }
         </div>
         <div class="contact-slot"></div>
+        ${matches.length ? `
+        <details class="card-matches">
+          <summary>${matches.length} ${matches.length === 1 ? "match" : "matches"} for your order</summary>
+          <div class="match-list">${matches.map(m => matchRowHTML(m, o)).join("")}</div>
+        </details>` : ""}
       </div>
   `;
 }
 
-function wireCardEvents(el, o) {
+async function recordJoin(o) {
+  // record the join so the poster's device (or their Cloud Function) knows to notify them
+  try {
+    await setDoc(doc(db, ORDERS_COL, o.id, "joins", myId), {
+      joinerId: myId,
+      joinerName: getMyName(),
+      joinerEmail: myEmail,
+      joinedAt: serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.error("Couldn't record join (notification to poster may not fire):", err);
+  }
+}
+
+function revealContactInto(slot, o) {
+  const waDigits = extractWhatsAppDigits(o.contact);
+  let html = `<div class="contact-reveal">Reach out: ${escapeHtml(o.contact)}</div>`;
+  if (waDigits) {
+    html += `<a class="btn btn-primary btn-block wa-link" href="${buildWhatsAppLink(waDigits, o)}" target="_blank" rel="noopener">Message on WhatsApp</a>`;
+  }
+  slot.innerHTML = html;
+}
+
+function wireCardEvents(el, o, pool) {
   const joinBtn = el.querySelector("[data-join]");
   if (joinBtn) {
     joinBtn.addEventListener("click", async () => {
       joinBtn.disabled = true;
       joinBtn.textContent = "…";
-
-      // record the join so the poster's device (or their Cloud Function) knows to notify them
-      try {
-        await setDoc(doc(db, ORDERS_COL, o.id, "joins", myId), {
-          joinerId: myId,
-          joinerName: getMyName(),
-          joinerEmail: myEmail,
-          joinedAt: serverTimestamp()
-        }, { merge: true });
-      } catch (err) {
-        console.error("Couldn't record join (notification to poster may not fire):", err);
-      }
-
-      const slot = el.querySelector(".contact-slot");
-      const waDigits = extractWhatsAppDigits(o.contact);
-      let html = `<div class="contact-reveal">Reach out: ${escapeHtml(o.contact)}</div>`;
-      if (waDigits) {
-        html += `<a class="btn btn-primary btn-block wa-link" href="${buildWhatsAppLink(waDigits, o)}" target="_blank" rel="noopener">Message on WhatsApp</a>`;
-      }
-      slot.innerHTML = html;
+      await recordJoin(o);
+      revealContactInto(el.querySelector(".contact-slot"), o);
       joinBtn.textContent = "Contact revealed ✓";
     });
   }
@@ -554,6 +879,9 @@ function wireCardEvents(el, o) {
       deleteDoc(doc(db, ORDERS_COL, o.id)).catch(() => toast("Couldn't remove — try again"));
     });
   }
+  // only present on your own cards — see cardInnerHTML
+  const nested = el.querySelector(".card-matches .match-list");
+  if (nested) wireMatchRows(nested, matchesFor(o, pool));
 }
 
 function render() {
@@ -565,26 +893,38 @@ function render() {
     deleteDoc(doc(db, ORDERS_COL, o.id)).catch(() => { });
   });
 
+  // Matching always runs against every live order, not just the visible ones —
+  // filtering the board shouldn't change who can actually club together.
+  const pool = active;
+
   let visible = currentFilter === "mine"
     ? active.filter(o => o.posterId === myId)
-    : active;
+    : active.filter(o => o.app === currentFilter);
 
-  // ---- smart search: filters ----
+  // ---- search + filters ----
   const myValueRaw = sMyValue.value;
   const myValue = myValueRaw === "" ? null : Number(myValueRaw);
   const maxTimeMin = Number(sMaxTime.value);
-  const appFilter = sApp.value;
+  const q = sQuery.value.trim().toLowerCase();
 
+  searchBar.classList.toggle("has-query", q.length > 0);
+
+  if (q) {
+    visible = visible.filter(o =>
+      String(o.outlet || "").toLowerCase().includes(q) ||
+      String(o.items || "").toLowerCase().includes(q) ||
+      String(o.location || "").toLowerCase().includes(q) ||
+      String(o.app || "").toLowerCase().includes(q)
+    );
+  }
   if (maxTimeMin > 0) {
     visible = visible.filter(o => (o.expiresAt - now) <= maxTimeMin * 60000);
   }
-  if (appFilter) {
-    visible = visible.filter(o => o.app === appFilter);
-  }
 
-  // ---- smart search: sort ----
+  // ---- sort ----
   const sortMode = sSort.value;
   if (myValue !== null && sortMode === "match") {
+    // closest fit to what my cart can actually cover
     visible = [...visible].sort((a, b) => Math.abs(a.target - myValue) - Math.abs(b.target - myValue));
   } else if (sortMode === "soonest") {
     visible = [...visible].sort((a, b) => a.expiresAt - b.expiresAt);
@@ -594,6 +934,15 @@ function render() {
 
   emptyState.hidden = visible.length !== 0;
 
+  if (myValue !== null) {
+    const fits = visible.filter(o => (Number(o.target) || 0) <= myValue).length;
+    searchHint.textContent = fits
+      ? `${fits} of these fit a ₹${myValue} cart.`
+      : `Nothing here fits a ₹${myValue} cart yet.`;
+  } else {
+    searchHint.textContent = "";
+  }
+
   // ---- keyed reconciliation: update/move existing cards in place,
   // only create+animate cards that are genuinely new. This is what
   // stops the whole board flashing on every snapshot / 30s tick. ----
@@ -601,27 +950,35 @@ function render() {
   let prevEl = null;
 
   visible.forEach(o => {
-    const html = cardInnerHTML(o, now, myValue);
-    const needed = o.target;
-    const isGoodMatch = myValue !== null && needed <= myValue;
+    const html = cardInnerHTML(o, myValue, pool);
+    const isGoodMatch = myValue !== null && (Number(o.target) || 0) <= myValue;
     const wantedClass = "card" + (isGoodMatch ? " matched" : "");
 
     let el = board.querySelector(`[data-order-id="${o.id}"]`);
 
     if (el) {
       if (el.dataset.snapshot !== html) {
+        // Preserve an open matches drawer across re-renders — collapsing it
+        // under the user every 30s would make it unusable.
+        const wasOpen = !!el.querySelector(".card-matches[open]");
         el.innerHTML = html;
         el.dataset.snapshot = html;
-        wireCardEvents(el, o);
+        if (wasOpen) {
+          const d = el.querySelector(".card-matches");
+          if (d) d.open = true;
+        }
+        wireCardEvents(el, o, pool);
       }
       if (el.className !== wantedClass) el.className = wantedClass;
+      if (el.dataset.app !== o.app) el.dataset.app = o.app;
     } else {
       el = document.createElement("div");
       el.dataset.orderId = o.id;
+      el.dataset.app = o.app;
       el.className = wantedClass + " card-enter";
       el.innerHTML = html;
       el.dataset.snapshot = html;
-      wireCardEvents(el, o);
+      wireCardEvents(el, o, pool);
     }
 
     // keep DOM order matching sorted/filtered order
@@ -661,7 +1018,8 @@ function extractWhatsAppDigits(contact) {
 }
 
 function buildWhatsAppLink(digits, o) {
-  const msg = `Hey! Saw your OrderUp post for ${o.app} (₹${o.target} more needed) — I'm in, let's split delivery!`;
+  const where = o.outlet ? `${o.app} (${o.outlet})` : o.app;
+  const msg = `Hey! Saw your OrderUp post for ${where} — ₹${o.target} more needed. I'm in, let's club the order!`;
   return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -675,7 +1033,8 @@ function escapeHtml(str) {
 setInterval(render, 30000);
 
 /* ---------------- init ---------------- */
-/* init handled by onAuthStateChanged above */
+paintAppIcons();   // upgrade the filter bubbles' letter fallbacks to real logos
+/* board init handled by onAuthStateChanged above */
 
 /* ---------------- PWA service worker ---------------- */
 if ("serviceWorker" in navigator) {
