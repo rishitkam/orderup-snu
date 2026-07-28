@@ -21,6 +21,18 @@ export const googleProvider = new GoogleAuthProvider();
 
 const firebaseConfig = {
   apiKey: "AIzaSyC9rTl9gCtEmzM4IYJRoxc3wCQU87OrW84",
+  // Leave this as the firebaseapp.com domain Firebase generated.
+  //
+  // It's tempting to "fix" this to match the domain the site is served from
+  // (orderknot-snu.web.app). Don't, unless you have also added
+  // https://orderknot-snu.web.app/__/auth/handler to the Authorized redirect
+  // URIs on the OAuth client in Google Cloud Console — otherwise Google
+  // rejects every sign-in with "Error 400: redirect_uri_mismatch".
+  //
+  // Matching domains only mattered for signInWithRedirect, which reads the
+  // credential back out of authDomain-owned storage. We use signInWithPopup
+  // now (see app.js), and a popup returns the credential over postMessage,
+  // which works cross-origin — so this can safely stay as-is.
   authDomain: "orderknot-snu.firebaseapp.com",
   projectId: "orderknot-snu",
   storageBucket: "orderknot-snu.firebasestorage.app",
@@ -35,7 +47,18 @@ export const auth = getAuth(app);
 googleProvider.setCustomParameters({
   prompt: "select_account"
 });
-await setPersistence(auth, browserLocalPersistence);
+// Storage can be unavailable outright (Private Browsing, locked-down ITP
+// settings, some in-app webviews). This used to be a bare top-level await —
+// when it rejected, the whole module failed to evaluate, and app.js imports
+// from here, so app.js never ran at all: no listeners, no onAuthStateChanged,
+// a sign-in button that silently did nothing. Now it degrades to Firebase's
+// in-memory default instead, and reports why.
+export const persistenceError = await setPersistence(auth, browserLocalPersistence)
+  .then(() => null)
+  .catch((err) => {
+    console.error("Local persistence unavailable, falling back to in-memory:", err);
+    return err;
+  });
 
 // only students with this email domain may use the site
 export const ALLOWED_DOMAIN = "snu.edu.in";

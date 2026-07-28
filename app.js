@@ -1,4 +1,4 @@
-import { db, auth, googleProvider, ALLOWED_DOMAIN } from "./firebase-config.js";
+import { db, auth, googleProvider, ALLOWED_DOMAIN, persistenceError } from "./firebase-config.js";
 import {
   collection, addDoc, onSnapshot, deleteDoc, doc, setDoc,
   serverTimestamp, query, orderBy
@@ -22,12 +22,60 @@ const appRoot = document.getElementById("appRoot");
 const googleSignInBtn = document.getElementById("googleSignInBtn");
 const loginSub = document.getElementById("loginSub");
 const loginNote = document.getElementById("loginNote");
+const loginDiag = document.getElementById("loginDiag");
+const loginDiagBody = document.getElementById("loginDiagBody");
 const whoamiEmail = document.getElementById("whoamiEmail");
 const signOutBtn = document.getElementById("signOutBtn");
 
 function showLoginNote(msg, isError) {
   loginNote.textContent = msg;
   loginNote.classList.toggle("error", !!isError);
+}
+
+/* ---------------- sign-in diagnostics ----------------
+   The failure mode we kept chasing is *silent*: getRedirectResult() resolves
+   null rather than rejecting, so nothing throws and the login screen simply
+   reappears. This records that a redirect was started, and if we come back
+   with no user, says so on screen instead of pretending nothing happened. */
+const PENDING_REDIRECT_KEY = "orderup_redirect_started";
+
+function markRedirectStarted() {
+  try { localStorage.setItem(PENDING_REDIRECT_KEY, String(Date.now())); } catch { /* storage blocked */ }
+}
+function consumeRedirectStarted() {
+  try {
+    const started = localStorage.getItem(PENDING_REDIRECT_KEY);
+    localStorage.removeItem(PENDING_REDIRECT_KEY);
+    return started ? Number(started) : null;
+  } catch {
+    return null;
+  }
+}
+
+function storageProbe() {
+  try {
+    localStorage.setItem("__orderup_probe", "1");
+    localStorage.removeItem("__orderup_probe");
+    return "ok";
+  } catch (err) {
+    return "BLOCKED (" + (err && err.name ? err.name : "unknown") + ")";
+  }
+}
+
+function showDiag(reason) {
+  const lines = [
+    "reason:      " + reason,
+    "authDomain:  " + (auth.config && auth.config.authDomain),
+    "page origin: " + location.origin,
+    "same-origin: " + (auth.config && auth.config.authDomain === location.host ? "yes" : "NO <-- suspect"),
+    "flow:        popup-first" + (IS_MOBILE ? " (mobile UA)" : " (desktop UA)"),
+    "standalone:  " + (window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true),
+    "localStorage:" + storageProbe(),
+    "persistence: " + (persistenceError ? persistenceError.code || String(persistenceError) : "ok"),
+    "ua:          " + navigator.userAgent
+  ];
+  loginDiagBody.textContent = lines.join("\n");
+  loginDiag.hidden = false;
 }
 
 async function handleSignedInUser(user) {
@@ -42,24 +90,44 @@ async function handleSignedInUser(user) {
 googleSignInBtn.addEventListener("click", async () => {
   showLoginNote("Opening Google sign-in…", false);
   try {
-    // Popups get blocked/flaky in a lot of mobile browsers and installed
-    // PWAs, which is what caused sign-in to feel stuck until a manual
-    // pull-to-refresh. Redirect is the reliable path on mobile; popup
-    // stays snappier on desktop.
-    if (IS_MOBILE) {
-      await signInWithRedirect(auth, googleProvider);
-      // page will navigate away and come back; handled by getRedirectResult() below
-    } else {
-      const result = await signInWithPopup(auth, googleProvider);
-      await handleSignedInUser(result.user);
-    }
+    // Popup first, on every device — including mobile.
+    //
+    // signInWithRedirect hands the credential over through sessionStorage,
+    // and iOS clears/partitions that across the round trip to Google. Firebase
+    // reports it as "missing initial state ... signInWithRedirect in a
+    // storage-partitioned browser environment", and the user lands back on the
+    // login screen. A popup returns the credential over postMessage and never
+    // depends on that handoff, which is why desktop Safari — the same WebKit
+    // engine as the iPhone — has worked all along.
+    const result = await signInWithPopup(auth, googleProvider);
+    await handleSignedInUser(result.user);
   } catch (err) {
     console.error(err);
-    if (err.code === "auth/popup-closed-by-user") {
+
+    // User just closed it / double-tapped — not an error worth shouting about.
+    if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
       showLoginNote("", false);
-    } else {
-      showLoginNote("Couldn't sign in — check the Firebase setup in the README.", true);
+      return;
     }
+
+    // Genuinely couldn't open a window (popup blocker, or an installed PWA
+    // that forbids new windows). Redirect is worse, but it's better than
+    // no path at all — so keep it strictly as a fallback.
+    if (err.code === "auth/popup-blocked" || err.code === "auth/operation-not-supported-in-this-environment") {
+      showLoginNote("Opening Google sign-in…", false);
+      try {
+        markRedirectStarted();
+        await signInWithRedirect(auth, googleProvider);
+      } catch (redirectErr) {
+        console.error(redirectErr);
+        showLoginNote("Couldn't start sign-in on this browser.", true);
+        showDiag((redirectErr && redirectErr.code) || String(redirectErr));
+      }
+      return;
+    }
+
+    showLoginNote("Couldn't sign in — please try again.", true);
+    showDiag((err && err.code) || String(err));
   }
 });
 
@@ -67,10 +135,23 @@ signOutBtn.addEventListener("click", () => signOut(auth));
 
 // completes the sign-in when the browser returns from the Google redirect
 getRedirectResult(auth).then((result) => {
-  if (result && result.user) handleSignedInUser(result.user);
+  const startedAt = consumeRedirectStarted();
+  if (result && result.user) {
+    handleSignedInUser(result.user);
+    return;
+  }
+  // We started a redirect and came back with nothing, and no session was
+  // restored either. This is the silent bounce — say so rather than quietly
+  // re-showing the login screen as if the user never tried.
+  if (startedAt && !auth.currentUser) {
+    showLoginNote("Sign-in didn't complete. Tap below and send this to whoever runs OrderUp.", true);
+    showDiag("returned from Google with no credential (getRedirectResult was empty)");
+  }
 }).catch((err) => {
+  consumeRedirectStarted();
   console.error(err);
   showLoginNote("Couldn't finish signing in — please try again.", true);
+  showDiag((err && err.code) || String(err));
 });
 
 onAuthStateChanged(auth, (user) => {
@@ -79,6 +160,9 @@ onAuthStateChanged(auth, (user) => {
     myEmail = user.email;
     myName = user.displayName || user.email.split("@")[0];
     whoamiEmail.textContent = myName;
+    consumeRedirectStarted();
+    loginDiag.hidden = true;
+    showLoginNote("", false);
     loginGate.hidden = true;
     appRoot.hidden = false;
     refreshQuickPostBar();
@@ -128,7 +212,11 @@ const getSavedExpiry = () => getSavedField("expiry");
 const saveExpiry = (v) => saveField("expiry", v);
 
 function hasQuickPostDefaults() {
-  return !!(getSavedContact() && getSavedLocation());
+  // A contact saved before numbers were required could be an Instagram handle
+  // or a room number. Treat those as "no default" so the user is sent through
+  // the full form once to supply a real number, rather than quick-posting
+  // something nobody can call.
+  return !!(normalizePhone(getSavedContact()) && getSavedLocation());
 }
 
 /* ---------------- quick post bar ---------------- */
@@ -152,7 +240,7 @@ function refreshQuickPostBar() {
   if (savedApp) qpApp.value = savedApp;
   const savedExpiry = getSavedExpiry();
   if (savedExpiry) qpExpiry.value = savedExpiry;
-  quickPostNote.textContent = `Posts to ${getSavedLocation()} · reachable at ${getSavedContact()}. Tap "Post an order" to change these.`;
+  quickPostNote.textContent = `Posts to ${getSavedLocation()} · reachable at ${normalizePhone(getSavedContact())}. Tap "Post an order" to change these.`;
 }
 
 qpSubmit.addEventListener("click", async () => {
@@ -162,6 +250,12 @@ qpSubmit.addEventListener("click", async () => {
     qpTarget.focus();
     return;
   }
+  const savedContact = normalizePhone(getSavedContact());
+  if (!savedContact) {
+    toast("Add your mobile number first — tap \"Post an order\"");
+    return;
+  }
+
   const minutes = Number(qpExpiry.value);
   const expiresAt = Date.now() + minutes * 60 * 1000;
   const appVal = qpApp.value;
@@ -172,7 +266,7 @@ qpSubmit.addEventListener("click", async () => {
     target,
     items: "",
     location: getSavedLocation(),
-    contact: getSavedContact(),
+    contact: savedContact,
     posterId: myId,
     posterName: getMyName(),
     posterEmail: myEmail,
@@ -260,7 +354,7 @@ openPostModalBtn.addEventListener("click", () => {
   const locationHint = document.getElementById("locationHint");
 
   if (!fContact.value) {
-    const saved = getSavedContact();
+    const saved = normalizePhone(getSavedContact()); // skip pre-numbers junk
     if (saved) { fContact.value = saved; contactHint.hidden = false; }
   }
   if (!fLocation.value) {
@@ -306,7 +400,14 @@ postForm.addEventListener("submit", async (e) => {
   const minutes = Number(document.getElementById("fExpiry").value);
   const expiresAt = Date.now() + minutes * 60 * 1000;
 
-  const contact = document.getElementById("fContact").value.trim();
+  const contactInput = document.getElementById("fContact");
+  const contact = normalizePhone(contactInput.value);
+  if (!contact) {
+    toast("Enter a valid 10-digit mobile number");
+    contactInput.focus();
+    return;
+  }
+
   const location = document.getElementById("fLocation").value.trim();
   const appVal = document.getElementById("fApp").value;
   const expiryVal = document.getElementById("fExpiry").value;
@@ -538,13 +639,25 @@ function render() {
   });
 }
 
+/* Single source of truth for "is this a usable number?".
+   Accepts what people actually type — "+91 98765 43210", "098765 43210",
+   "98765-43210" — and reduces it to the bare 10 digits we store. Returns null
+   for anything that isn't a valid Indian mobile, which is what the form,
+   the quick-post bar, and the WhatsApp link all gate on. */
+function normalizePhone(raw) {
+  const digits = String(raw || "").replace(/\D/g, "");
+  let ten = digits;
+  if (digits.length === 12 && digits.startsWith("91")) ten = digits.slice(2);
+  else if (digits.length === 13 && digits.startsWith("091")) ten = digits.slice(3);
+  else if (digits.length === 11 && digits.startsWith("0")) ten = digits.slice(1);
+  // Indian mobile numbers are 10 digits starting 6-9. Landlines and short
+  // codes won't work on WhatsApp, so they're rejected too.
+  return /^[6-9]\d{9}$/.test(ten) ? ten : null;
+}
+
 function extractWhatsAppDigits(contact) {
-  const digits = String(contact || "").replace(/[^\d]/g, "");
-  if (digits.length === 10) return "91" + digits;               // bare 10-digit Indian number
-  if (digits.length === 11 && digits.startsWith("0")) return "91" + digits.slice(1); // 0-prefixed
-  if (digits.length === 12 && digits.startsWith("91")) return digits; // already has country code
-  if (digits.length === 13 && digits.startsWith("091")) return "91" + digits.slice(3);
-  return null; // doesn't look like a phone number (Instagram handle, room number, etc.)
+  const ten = normalizePhone(contact);
+  return ten ? "91" + ten : null;
 }
 
 function buildWhatsAppLink(digits, o) {

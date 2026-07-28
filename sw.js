@@ -1,4 +1,4 @@
-const CACHE = "orderup-v9";
+const CACHE = "orderup-v12";
 const ASSETS = ["./", "index.html", "style.css", "app.js", "manifest.json"];
 
 self.addEventListener("install", (e) => {
@@ -24,9 +24,18 @@ self.addEventListener("activate", (e) => {
 // firestore.googleapis.com — if the service worker wraps that in
 // respondWith(fetch(...)), it can silently break live updates, which is
 // exactly what caused "posts don't show up until I manually refresh".
+//
+// CRITICAL #2: never touch /__/ either. That's Firebase Hosting's reserved
+// namespace, and /__/auth/handler + /__/auth/iframe are how sign-in completes.
+// Now that authDomain matches the site's own origin, those are SAME-origin, so
+// the check above no longer skips them — without this second check the service
+// worker would start intercepting and caching the auth handoff, which breaks
+// login in a way that looks identical to the bug this whole change fixes.
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
-  if (new URL(e.request.url).origin !== self.location.origin) return; // let cross-origin requests (Firestore, fonts, etc.) pass through untouched
+  const url = new URL(e.request.url);
+  if (url.origin !== self.location.origin) return; // let cross-origin requests (Firestore, fonts, etc.) pass through untouched
+  if (url.pathname.startsWith("/__/")) return;     // let Firebase's auth handler through untouched
   e.respondWith(
     fetch(e.request)
       .then(resp => {
