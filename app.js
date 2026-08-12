@@ -1,4 +1,6 @@
-import { db, auth, googleProvider, ALLOWED_DOMAIN, persistenceError } from "./firebase-config.js";
+import {
+  db, auth, googleProvider, ALLOWED_DOMAIN, persistenceState, persistenceReady
+} from "./firebase-config.js";
 import {
   collection, addDoc, onSnapshot, deleteDoc, doc, setDoc,
   serverTimestamp, query, orderBy
@@ -124,12 +126,26 @@ function showDiag(reason) {
     "flow:        popup-first" + (IS_MOBILE ? " (mobile UA)" : " (desktop UA)"),
     "standalone:  " + (window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true),
     "localStorage:" + storageProbe(),
-    "persistence: " + (persistenceError ? persistenceError.code || String(persistenceError) : "ok"),
+    "persistence: " + (persistenceState.error ? persistenceState.error.code || String(persistenceState.error) : "ok"),
     "ua:          " + navigator.userAgent
   ];
   loginDiagBody.textContent = lines.join("\n");
   loginDiag.hidden = false;
 }
+
+/* Anything that escapes to the top level gets shown on the login screen.
+   Without this, a module-evaluation error is invisible unless devtools were
+   already open *before* the page loaded — which is how a dead auth observer
+   went unnoticed while the console looked perfectly clean. */
+window.addEventListener("error", (e) => {
+  showLoginNote("Something failed to load — details below.", true);
+  showDiag("uncaught: " + ((e.error && e.error.message) || e.message));
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const r = e.reason;
+  showLoginNote("Something failed to load — details below.", true);
+  showDiag("unhandled rejection: " + ((r && (r.code || r.message)) || String(r)));
+});
 
 async function handleSignedInUser(user) {
   const email = (user.email || "").toLowerCase();
@@ -152,10 +168,16 @@ googleSignInBtn.addEventListener("click", async () => {
     // login screen. A popup returns the credential over postMessage and never
     // depends on that handoff, which is why desktop Safari — the same WebKit
     // engine as the iPhone — has worked all along.
+    // Persistence is no longer awaited at module load (see firebase-config.js).
+    // Wait for it here instead, so the session still survives a page reload —
+    // this handler is already async, so it costs nothing.
+    await persistenceReady;
+    console.log("[orderup] calling signInWithPopup, authDomain =", auth.config && auth.config.authDomain);
     const result = await signInWithPopup(auth, googleProvider);
+    console.log("[orderup] popup RESOLVED for", result && result.user && result.user.email);
     await handleSignedInUser(result.user);
   } catch (err) {
-    console.error(err);
+    console.error("[orderup] popup REJECTED:", err && err.code, err);
 
     // User just closed it / double-tapped — not an error worth shouting about.
     if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
@@ -207,35 +229,13 @@ getRedirectResult(auth).then((result) => {
   showDiag((err && err.code) || String(err));
 });
 
-onAuthStateChanged(auth, (user) => {
-  if (user && user.email && user.email.toLowerCase().endsWith("@" + ALLOWED_DOMAIN)) {
-    myId = user.uid;
-    myEmail = user.email;
-    myName = user.displayName || user.email.split("@")[0];
-    whoamiEmail.textContent = myName;
-    consumeRedirectStarted();
-    loginDiag.hidden = true;
-    showLoginNote("", false);
-    loginGate.hidden = true;
-    appRoot.hidden = false;
-    currentFilter = isKnownApp(getSavedApp()) ? getSavedApp() : DEFAULT_APP;
-    applyFilterUI();
-    refreshQuickPostBar();
-    startOrdersListener(); // only start reading once we actually have a valid, verified auth token
-  } else {
-    if (user) {
-      // signed in but wrong domain — kick them out
-      signOut(auth);
-      showLoginNote(`Only @${ALLOWED_DOMAIN} accounts can use OrderUp.`, true);
-    }
-    myId = null;
-    myEmail = null;
-    myName = null;
-    loginGate.hidden = false;
-    appRoot.hidden = true;
-    stopOrdersListener();
-  }
-});
+/* The auth observer is registered at the BOTTOM of this file, not here.
+   It reads currentFilter and calls applyFilterUI()/refreshQuickPostBar()/
+   startOrdersListener(), which touch `const`s declared much further down.
+   Registering it up here meant the observer could run while those bindings
+   were still in the temporal dead zone — and Firebase swallows exceptions
+   thrown inside the observer, so the failure was completely silent: sign-in
+   succeeded, nothing listened, the login screen just stayed put. */
 
 function getMyName() { return myName || ""; }
 
@@ -752,26 +752,85 @@ function wireMatchRows(container, orders) {
 /* ---------------- realtime listener ---------------- */
 let unsubscribeOrders = null;
 
+let listenerRetry = 0;
+
 function startOrdersListener() {
   if (unsubscribeOrders) return; // already listening
   const q = query(collection(db, ORDERS_COL), orderBy("createdAt", "desc"));
+
   unsubscribeOrders = onSnapshot(q, (snap) => {
+    listenerRetry = 0; // a delivered snapshot means the stream is healthy
     latestOrders = [];
     snap.forEach(d => latestOrders.push({ id: d.id, ...d.data() }));
-    render();
+    // A throw in here would propagate out of the snapshot callback and can
+    // take the subscription with it — one malformed doc would then freeze
+    // the board until a manual refresh. Contain it.
+    try {
+      render();
+    } catch (err) {
+      console.error("[orderup] render failed:", err);
+    }
   }, (err) => {
-    console.error(err);
-    board.innerHTML = `<p class="empty-state">Couldn't connect to the board. Check that firebase-config.js has been filled in with a real project.</p>`;
+    console.error("[orderup] orders listener error:", err);
+
+    // Drop the dead subscription so the next attempt opens a fresh stream.
+    detachOrdersListener();
+
+    // Streams drop routinely — phone sleeps, wifi switches, tab is frozen.
+    // Reconnect with backoff instead of leaving a permanently stale board.
+    listenerRetry = Math.min(listenerRetry + 1, 6);
+    const wait = Math.min(1000 * 2 ** (listenerRetry - 1), 30000);
+    console.log(`[orderup] reconnecting orders listener in ${wait}ms`);
+    setTimeout(() => { if (myId) startOrdersListener(); }, wait);
   });
 }
 
-function stopOrdersListener() {
+function detachOrdersListener() {
   if (unsubscribeOrders) {
-    unsubscribeOrders();
+    try { unsubscribeOrders(); } catch { /* already torn down */ }
     unsubscribeOrders = null;
   }
+}
+
+function stopOrdersListener() {
+  detachOrdersListener();
+  listenerRetry = 0;
   latestOrders = [];
 }
+
+/* ---------------- keeping the board live ----------------
+   Safari (and iOS especially) freezes background tabs and installed PWAs, and
+   silently kills the Firestore stream while doing so. Nothing tells the page
+   this happened: it resumes looking connected while receiving nothing, which
+   is the "I have to refresh to see new orders" complaint. So on the way back
+   we rebuild the subscription outright rather than trusting the old one. */
+let hiddenSince = 0;
+const STALE_AFTER_MS = 20000;
+
+function resumeLiveUpdates(reason) {
+  if (!myId) return;
+  console.log("[orderup] resuming live updates:", reason);
+  detachOrdersListener();
+  startOrdersListener();
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    hiddenSince = Date.now();
+    return;
+  }
+  const away = hiddenSince ? Date.now() - hiddenSince : 0;
+  hiddenSince = 0;
+  try { render(); } catch { /* countdowns only */ }
+  if (away > STALE_AFTER_MS) resumeLiveUpdates(`tab hidden for ${Math.round(away / 1000)}s`);
+});
+
+// Safari restores from its back/forward cache with dead network connections.
+window.addEventListener("pageshow", (e) => {
+  if (e.persisted) resumeLiveUpdates("restored from bfcache");
+});
+
+window.addEventListener("online", () => resumeLiveUpdates("network came back"));
 
 /* ---------------- render ---------------- */
 function timeLeftLabel(expiresAt) {
@@ -1034,7 +1093,52 @@ setInterval(render, 30000);
 
 /* ---------------- init ---------------- */
 paintAppIcons();   // upgrade the filter bubbles' letter fallbacks to real logos
-/* board init handled by onAuthStateChanged above */
+
+/* ---------------- auth observer ----------------
+   Registered LAST, deliberately. Everything below the sign-in handler —
+   currentFilter, the DOM refs, applyFilterUI, refreshQuickPostBar,
+   startOrdersListener — has to be initialized before this can fire, or the
+   callback hits the temporal dead zone. Firebase swallows whatever the
+   observer throws, so getting this order wrong fails silently. */
+console.log("[orderup] module loaded, registering auth observer");
+onAuthStateChanged(auth, (user) => {
+  console.log("[orderup] auth state changed:", user ? user.email : "null");
+  try {
+    if (user && user.email && user.email.toLowerCase().endsWith("@" + ALLOWED_DOMAIN)) {
+      myId = user.uid;
+      myEmail = user.email;
+      myName = user.displayName || user.email.split("@")[0];
+      whoamiEmail.textContent = myName;
+      consumeRedirectStarted();
+      loginDiag.hidden = true;
+      showLoginNote("", false);
+      loginGate.hidden = true;
+      appRoot.hidden = false;
+      currentFilter = isKnownApp(getSavedApp()) ? getSavedApp() : DEFAULT_APP;
+      applyFilterUI();
+      refreshQuickPostBar();
+      startOrdersListener(); // only read once we have a valid, verified auth token
+    } else {
+      if (user) {
+        // signed in but wrong domain — kick them out
+        signOut(auth);
+        showLoginNote(`Only @${ALLOWED_DOMAIN} accounts can use OrderUp.`, true);
+      }
+      myId = null;
+      myEmail = null;
+      myName = null;
+      loginGate.hidden = false;
+      appRoot.hidden = true;
+      stopOrdersListener();
+    }
+  } catch (err) {
+    // Firebase would otherwise eat this and leave the user staring at the
+    // login screen with an empty console — which is exactly what happened.
+    console.error("Auth state handler failed:", err);
+    showLoginNote("Signed in, but the board failed to load.", true);
+    showDiag("auth handler threw: " + (err && err.message ? err.message : String(err)));
+  }
+});
 
 /* ---------------- PWA service worker ---------------- */
 if ("serviceWorker" in navigator) {

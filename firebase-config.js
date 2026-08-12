@@ -7,7 +7,7 @@
 // ------------------------------------------------------------------
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 import {
   getAuth,
@@ -42,8 +42,32 @@ const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+// onSnapshot keeps the board live over a long-running WebChannel stream. Plenty
+// of networks (campus wifi, captive portals, corporate proxies) and some Safari
+// configurations block that stream while still allowing ordinary requests — the
+// symptom is the first snapshot arriving fine and no update ever landing after
+// it, i.e. "I have to refresh to see new orders". Auto-detect falls back to long
+// polling when that happens, instead of sitting on a dead stream.
+export const db = initializeFirestore(app, {
+  experimentalAutoDetectLongPolling: true
+});
 export const auth = getAuth(app);
+
+// Declared BEFORE any async work in this module, and deliberately so.
+//
+// This module used to end with `await setPersistence(...)` and declare
+// ALLOWED_DOMAIN *after* it. A top-level await suspends module evaluation,
+// and any export declared after it is still in its temporal dead zone while
+// suspended — so callbacks that fire during that window (Firebase's auth
+// observer is one) see an uninitialized binding. Safari reported it as
+// "ReferenceError: Cannot access 'ALLOWED_DOMAIN' before initialization",
+// thrown on the observer's first line. Firebase swallows whatever the
+// observer throws, so sign-in succeeded, nothing listened, and the login
+// screen sat there — with an empty-looking console.
+//
+// Rule for this file: no top-level await, and exports first.
+export const ALLOWED_DOMAIN = "snu.edu.in";
+
 googleProvider.setCustomParameters({
   prompt: "select_account"
 });
@@ -51,15 +75,15 @@ googleProvider.setCustomParameters({
 // settings, some in-app webviews). This used to be a bare top-level await —
 // when it rejected, the whole module failed to evaluate, and app.js imports
 // from here, so app.js never ran at all: no listeners, no onAuthStateChanged,
-// a sign-in button that silently did nothing. Now it degrades to Firebase's
-// in-memory default instead, and reports why.
-export const persistenceError = await setPersistence(auth, browserLocalPersistence)
-  .then(() => null)
+// a sign-in button that silently did nothing. But awaiting it at the top
+// level is what caused the TDZ bug described above. So: start it, expose the
+// promise so callers can sequence against it, and record any failure in a
+// mutable holder that's safe to read at any time.
+export const persistenceState = { error: null };
+
+export const persistenceReady = setPersistence(auth, browserLocalPersistence)
   .catch((err) => {
     console.error("Local persistence unavailable, falling back to in-memory:", err);
-    return err;
+    persistenceState.error = err;
   });
-
-// only students with this email domain may use the site
-export const ALLOWED_DOMAIN = "snu.edu.in";
 
