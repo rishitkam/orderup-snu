@@ -215,7 +215,13 @@
         <button class="modal-close" id="closePostModal" aria-label="Close">×</button>
       </div>
 
-      <form id="postForm">
+      <!-- novalidate is deliberate. #fApp is `required` but lives inside
+           #appField, which is hidden whenever the "Posting to …" chip is
+           shown. A browser that finds an invalid required control it cannot
+           focus blocks submission outright and shows nothing — a Post button
+           that silently does nothing. app.js validates every field itself,
+           with clearer messages than the native bubbles. -->
+      <form id="postForm" novalidate>
         <!-- When you're already inside an app's tab, the app is implied —
              this chip replaces the picker instead of asking again. -->
         <div class="posting-to" id="postingTo" hidden>
@@ -251,11 +257,6 @@
             <input type="number" id="fTarget" min="1" step="1" required placeholder="79" />
           </label>
         </div>
-
-        <label class="field">
-          <span class="field-label">What are you getting? (optional)</span>
-          <input type="text" id="fItems" maxlength="140" placeholder="Maggi, eggs, cold coffee..." />
-        </label>
 
         <div class="field-row">
           <label class="field">

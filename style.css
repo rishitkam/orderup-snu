@@ -733,7 +733,9 @@ a { color: inherit; }
 }
 .card-poster b { color: var(--ink-soft); }
 
-.card-actions { display: flex; gap: 8px; }
+/* Your own cards carry three actions (Edit / +15 min / Remove), which won't
+   sit on one line on a narrow phone. */
+.card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .btn-ghost {
   background: transparent;
   border: 1px solid var(--line);

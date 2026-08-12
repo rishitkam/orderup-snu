@@ -2,7 +2,7 @@ import {
   db, auth, googleProvider, ALLOWED_DOMAIN, persistenceState, persistenceReady
 } from "./firebase-config.js";
 import {
-  collection, addDoc, onSnapshot, deleteDoc, doc, setDoc,
+  collection, addDoc, onSnapshot, deleteDoc, doc, setDoc, updateDoc,
   serverTimestamp, query, orderBy
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
@@ -11,6 +11,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const ORDERS_COL = "orders";
+const EXTEND_BY_MS = 15 * 60 * 1000;
+// Ceiling on "+15 min" so a forgotten order can't be kept alive indefinitely.
+const MAX_REMAINING_MS = 3 * 60 * 60 * 1000;
 const IS_MOBILE = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
 /* ---------------- apps ----------------
@@ -486,13 +489,53 @@ function readOutlet() {
   return fOutlet.value;
 }
 
-/* ---------------- post modal ---------------- */
-function openPostModal() {
+/* ---------------- post modal ----------------
+   Doubles as the edit form. `editingOrderId` is the only thing that
+   distinguishes the two modes; it must be cleared on every close, or the next
+   "Post an order" would silently overwrite the last order that was edited. */
+let editingOrderId = null;
+const postModalTitle = document.getElementById("postModalTitle");
+const postSubmitBtn = postForm.querySelector('button[type="submit"]');
+
+// "Closes in" is always relative to now. When editing, preselect whichever
+// option is closest to the time the order has left, so saving without touching
+// it roughly preserves the existing deadline instead of silently resetting it.
+function closestExpiryOption(msLeft) {
+  const mins = Math.max(1, Math.round(msLeft / 60000));
+  const opts = [...document.getElementById("fExpiry").options].map(o => Number(o.value));
+  return String(opts.reduce((best, v) => Math.abs(v - mins) < Math.abs(best - mins) ? v : best, opts[0]));
+}
+
+function openPostModal(order) {
+  editingOrderId = order ? order.id : null;
+
   const fContact = document.getElementById("fContact");
   const fLocation = document.getElementById("fLocation");
+  const fCurrent = document.getElementById("fCurrent");
+  const fTarget = document.getElementById("fTarget");
   const fExpiry = document.getElementById("fExpiry");
   const contactHint = document.getElementById("contactHint");
   const locationHint = document.getElementById("locationHint");
+
+  postModalTitle.textContent = order ? "Edit your order" : "Post an order";
+  if (postSubmitBtn) postSubmitBtn.textContent = order ? "Save changes" : "Post to the board";
+
+  if (order) {
+    // Editing: every field comes from the order itself, not from saved defaults.
+    fContact.value = order.contact || "";
+    fLocation.value = order.location || "";
+    fCurrent.value = order.current || "";
+    fTarget.value = order.target || "";
+    fExpiry.value = closestExpiryOption((order.expiresAt || 0) - Date.now());
+    contactHint.hidden = true;
+    locationHint.hidden = true;
+
+    fApp.value = isKnownApp(order.app) ? order.app : DEFAULT_APP;
+    hidePostingToChip();               // let them move it between apps
+    syncOutletField(fApp.value, order.outlet);
+    openModal(postModalBackdrop);
+    return;
+  }
 
   if (!fContact.value) {
     const saved = normalizePhone(getSavedContact()); // skip pre-numbers junk
@@ -520,6 +563,11 @@ function openPostModal() {
   openModal(postModalBackdrop);
 }
 
+function closePostModal() {
+  closeModal(postModalBackdrop);
+  editingOrderId = null;
+}
+
 function showPostingToChip(app) {
   postingTo.hidden = false;
   appField.hidden = true;
@@ -532,7 +580,7 @@ function hidePostingToChip() {
   appField.hidden = false;
 }
 
-openPostModalBtn.addEventListener("click", openPostModal);
+openPostModalBtn.addEventListener("click", () => openPostModal(null));
 postingToChange.addEventListener("click", () => {
   hidePostingToChip();
   fApp.focus();
@@ -545,9 +593,9 @@ document.getElementById("fContact").addEventListener("input", () => {
 document.getElementById("fLocation").addEventListener("input", () => {
   document.getElementById("locationHint").hidden = true;
 });
-closePostModalBtn.addEventListener("click", () => closeModal(postModalBackdrop));
+closePostModalBtn.addEventListener("click", closePostModal);
 postModalBackdrop.addEventListener("click", (e) => {
-  if (e.target === postModalBackdrop) closeModal(postModalBackdrop);
+  if (e.target === postModalBackdrop) closePostModal();
 });
 
 closeMatchModalBtn.addEventListener("click", () => closeModal(matchModalBackdrop));
@@ -631,21 +679,19 @@ qpSubmit.addEventListener("click", async () => {
     expiresAt: Date.now() + minutes * 60 * 1000
   };
 
-  qpSubmit.disabled = true;
-  try {
-    await addDoc(collection(db, ORDERS_COL), payload);
-    saveExpiry(qpExpiry.value);
-    if (outlet) saveOutlet(outlet);
-    qpTarget.value = "";
-    qpCurrent.value = "";
-    toast("Posted to the board 🎉");
-    showMatchesFor(payload);
-  } catch (err) {
-    console.error(err);
-    toast("Couldn't post — check your Firebase setup");
-  } finally {
-    qpSubmit.disabled = false;
-  }
+  // Not awaited — see the note in the post form handler. The write lands in
+  // Firestore's local cache instantly and syncs on its own.
+  addDoc(collection(db, ORDERS_COL), payload).catch((err) => {
+    console.error("[orderup] quick post failed:", err);
+    toast("Couldn't post — check your connection");
+  });
+
+  saveExpiry(qpExpiry.value);
+  if (outlet) saveOutlet(outlet);
+  qpTarget.value = "";
+  qpCurrent.value = "";
+  toast("Posted to the board 🎉");
+  showMatchesFor(payload);
 });
 
 [qpTarget, qpCurrent].forEach(el => {
@@ -676,7 +722,24 @@ postForm.addEventListener("submit", async (e) => {
     return;
   }
 
-  const target = Number(document.getElementById("fTarget").value);
+  // Every field is checked here rather than by the browser — the form is
+  // novalidate, because a `required` control inside a hidden container blocks
+  // native submission silently. See the comment on the form in index.html.
+  const targetInput = document.getElementById("fTarget");
+  const target = Number(targetInput.value);
+  if (!target || target <= 0) {
+    toast("How much ₹ more do you need?");
+    targetInput.focus();
+    return;
+  }
+
+  const locationInput = document.getElementById("fLocation");
+  if (!locationInput.value.trim()) {
+    toast("Where should they meet you?");
+    locationInput.focus();
+    return;
+  }
+
   const minutes = Number(document.getElementById("fExpiry").value);
 
   const contactInput = document.getElementById("fContact");
@@ -695,18 +758,35 @@ postForm.addEventListener("submit", async (e) => {
     outlet,
     current,
     target,
-    items: document.getElementById("fItems").value.trim(),
     location,
     contact,
     posterId: myId,
     posterName: getMyName(),
     posterEmail: myEmail,
-    createdAt: serverTimestamp(),
     expiresAt: Date.now() + minutes * 60 * 1000
   };
 
+  const isEdit = !!editingOrderId;
+
   try {
-    await addDoc(collection(db, ORDERS_COL), payload);
+    // Deliberately NOT awaited.
+    //
+    // Firestore applies the write to its local cache immediately and only
+    // settles this promise once the server acknowledges it. Awaiting that ack
+    // before closing the modal is what made "Post" look broken on a phone: the
+    // order was saved and already on the board, but the UI sat there waiting
+    // for a round trip that can take a very long time on a weak connection.
+    const write = isEdit
+      // createdAt is left alone — editing shouldn't jump the order back to
+      // the top of the board.
+      ? updateDoc(doc(db, ORDERS_COL, editingOrderId), payload)
+      : addDoc(collection(db, ORDERS_COL), { ...payload, createdAt: serverTimestamp() });
+
+    write.catch((err) => {
+      console.error("[orderup] save failed:", err);
+      toast("Couldn't save — check your connection");
+    });
+
     saveContact(contact);
     saveLocation(location);
     saveApp(appVal);
@@ -715,9 +795,10 @@ postForm.addEventListener("submit", async (e) => {
     postForm.reset();
     document.getElementById("contactHint").hidden = true;
     document.getElementById("locationHint").hidden = true;
-    closeModal(postModalBackdrop);
-    toast("Posted to the board 🎉");
+    closePostModal();
+    toast(isEdit ? "Order updated ✓" : "Posted to the board 🎉");
     refreshQuickPostBar();
+    // Editing can change your cart value, which changes who matches you.
     showMatchesFor(payload);
   } catch (err) {
     console.error(err);
@@ -928,7 +1009,9 @@ function cardInnerHTML(o, myValue, pool) {
         </div>
         <div class="card-actions" style="margin-top:10px;">
           ${isMine
-      ? `<button class="btn-ghost btn-danger" data-remove="${o.id}">Remove</button>`
+      ? `<button class="btn-ghost" data-edit="${o.id}">Edit</button>
+             <button class="btn-ghost" data-extend="${o.id}">+15 min</button>
+             <button class="btn-ghost btn-danger" data-remove="${o.id}">Remove</button>`
       : `<button class="btn-ghost" data-join="${o.id}">I'm in — show contact</button>`
     }
         </div>
@@ -968,18 +1051,53 @@ function revealContactInto(slot, o) {
 function wireCardEvents(el, o, pool) {
   const joinBtn = el.querySelector("[data-join]");
   if (joinBtn) {
-    joinBtn.addEventListener("click", async () => {
+    joinBtn.addEventListener("click", () => {
       joinBtn.disabled = true;
-      joinBtn.textContent = "…";
-      await recordJoin(o);
+      // Reveal FIRST, and never await the join write.
+      //
+      // The contact is already in the order document we're rendering — showing
+      // it needs no network whatsoever. Awaiting recordJoin() before revealing
+      // meant that on a phone, where the server ack can hang for a long time,
+      // the button sat on "…" forever and the number never appeared. The join
+      // record is bookkeeping for a future notification; it must never gate
+      // the thing the user actually pressed the button for.
       revealContactInto(el.querySelector(".contact-slot"), o);
       joinBtn.textContent = "Contact revealed ✓";
+      recordJoin(o); // fire-and-forget; it logs its own failures
     });
   }
   const removeBtn = el.querySelector("[data-remove]");
   if (removeBtn) {
     removeBtn.addEventListener("click", () => {
       deleteDoc(doc(db, ORDERS_COL, o.id)).catch(() => toast("Couldn't remove — try again"));
+    });
+  }
+
+  const editBtn = el.querySelector("[data-edit]");
+  if (editBtn) {
+    editBtn.addEventListener("click", () => openPostModal(o));
+  }
+
+  const extendBtn = el.querySelector("[data-extend]");
+  if (extendBtn) {
+    extendBtn.addEventListener("click", async () => {
+      // Extend from whichever is later: the current deadline, or now. An order
+      // that already lapsed should get a real 15 minutes, not 15 minutes from
+      // a timestamp in the past.
+      const base = Math.max(Number(o.expiresAt) || 0, Date.now());
+      const next = base + EXTEND_BY_MS;
+      if (next - Date.now() > MAX_REMAINING_MS) {
+        toast("Can't extend beyond 3 hours out");
+        return;
+      }
+      // Not awaited — the local cache updates immediately and the board
+      // re-renders from it; waiting on the server ack would leave the button
+      // disabled for however long the phone's connection takes.
+      updateDoc(doc(db, ORDERS_COL, o.id), { expiresAt: next }).catch((err) => {
+        console.error("[orderup] extend failed:", err);
+        toast("Couldn't extend — check your connection");
+      });
+      toast("Extended by 15 min ⏱");
     });
   }
   // only present on your own cards — see cardInnerHTML

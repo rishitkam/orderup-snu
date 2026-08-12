@@ -3,17 +3,62 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isStudent() {
+      return request.auth != null &&
+             request.auth.token.email.matches(".*@snu\\.edu\\.in$");
+    }
+
+    // contact must be a bare 10-digit Indian mobile (starts 6-9). The form
+    // normalizes "+91 98765 43210" etc. down to this before writing, so
+    // anything else here means the UI was bypassed.
+    function hasUsableContact() {
+      return request.resource.data.contact is string &&
+             request.resource.data.contact.matches("^[6-9][0-9]{9}$");
+    }
+
+    function isKnownApp() {
+      return request.resource.data.app in ["Blinkit", "Zomato", "Swiggy"];
+    }
+
     match /orders/{orderId} {
 
-      allow read: if request.auth != null &&
-                   request.auth.token.email.matches(".*@snu\\.edu\\.in$");
+      allow read: if isStudent();
 
-      allow create: if request.auth != null &&
-                     request.auth.token.email.matches(".*@snu\\.edu\\.in$");
+      // Zomato/Swiggy orders must name an outlet — matching is per-outlet on
+      // the marketplaces, so an outlet-less order there could never be clubbed
+      // with anything.
+      allow create: if isStudent() &&
+                     hasUsableContact() &&
+                     isKnownApp() &&
+                     request.resource.data.outlet is string &&
+                     request.resource.data.current is number &&
+                     request.resource.data.current > 0 &&
+                     request.resource.data.target is number &&
+                     request.resource.data.target > 0 &&
+                     (request.resource.data.app == "Blinkit" ||
+                      request.resource.data.outlet.size() > 0);
 
-      allow update, delete:
-        if request.auth != null &&
-           resource.data.posterId == request.auth.uid;
+      // Covers both "Edit" and the "+15 min" extend button. Only the poster,
+      // and they can't hand the order to someone else. Deliberately lighter
+      // than create: an extend sends only expiresAt, and orders written by an
+      // older build may predate the newer required fields — validating those
+      // here would block people from extending or fixing them.
+      allow update: if isStudent() &&
+                     resource.data.posterId == request.auth.uid &&
+                     request.resource.data.posterId == resource.data.posterId &&
+                     hasUsableContact() &&
+                     isKnownApp();
+
+      allow delete: if request.auth != null &&
+                     resource.data.posterId == request.auth.uid;
+
+      match /joins/{joinerId} {
+        allow create: if isStudent() && request.auth.uid == joinerId;
+
+        allow read: if isStudent() &&
+                     (request.auth.uid == joinerId ||
+                      get(/databases/$(database)/documents/orders/$(orderId)).data.posterId == request.auth.uid);
+      }
     }
   }
 }
