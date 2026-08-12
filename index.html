@@ -5,8 +5,24 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>OrderUp — club your order, split the delivery</title>
-  <meta name="description" content="Club your Blinkit, Zomato or Swiggy order with someone on campus. Hit the free-delivery minimum and unlock large-order promos together." />
-  <meta name="theme-color" content="#1B2A2F" />
+  <meta name="description"
+    content="Club your Blinkit, Zomato or Swiggy order with someone on campus. Hit the free-delivery minimum and unlock large-order promos together." />
+  <meta name="theme-color" id="themeColor" content="#EAF2EC" />
+
+  <!-- Runs before first paint deliberately: applying the stored theme from
+       app.js instead would show a flash of the wrong background on every load. -->
+  <script>
+    (function () {
+      var stored = null;
+      try { stored = localStorage.getItem("orderup_theme"); } catch (e) { }
+      if (stored === "dark" || stored === "light") document.documentElement.dataset.theme = stored;
+      var dark = stored
+        ? stored === "dark"
+        : !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      var m = document.getElementById("themeColor");
+      if (m) m.setAttribute("content", dark ? "#0F1A17" : "#EAF2EC");
+    })();
+  </script>
 
   <link rel="manifest" href="manifest.json" />
   <link rel="icon"
@@ -71,6 +87,9 @@
         </a>
         <div class="whoami" id="whoami">
           <span class="whoami-email" id="whoamiEmail"></span>
+          <button class="icon-btn" id="themeToggle" type="button" aria-label="Switch to dark mode">
+            <span id="themeToggleIcon" aria-hidden="true">☾</span>
+          </button>
           <button class="whoami-name" id="signOutBtn">sign out</button>
         </div>
       </div>
@@ -80,10 +99,11 @@
     <main class="wrap">
 
       <section class="hero">
-        <p class="eyebrow">the campus notice board, but it's your cart</p>
+        <p class="eyebrow">Club your delivery carts!</p>
         <h1 class="hero-title">Nobody should pay<br /><em>₹40 delivery</em> alone.</h1>
-        <p class="hero-sub">Club your Blinkit, Zomato or Swiggy order with someone else's — cross the free-delivery
-          minimum, or hit the cart size that unlocks the big promo codes. No filler items required.</p>
+        <p class="hero-sub">Club your Blinkit, Zomato or Swiggy order with someone else's to cross the free-delivery
+          or hit the cart size that unlocks the big promo codes without having to order extra just for the sake of it.
+        </p>
       </section>
 
       <!-- APP FILTER BUBBLES -->
@@ -129,7 +149,7 @@
           <label class="field">
             <span class="field-label">Sort</span>
             <select id="sSort">
-              <option value="match">best match</option>
+              <option value="match">match</option>
               <option value="soonest">soonest</option>
               <option value="lowest">least ₹</option>
             </select>

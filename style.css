@@ -9,11 +9,96 @@
   --muted: #6B7C78;
   --line: #D6E2DA;
   --shadow: 0 1px 2px rgba(27,42,47,0.06), 0 8px 24px -12px rgba(27,42,47,0.18);
+
+  /* Everything below used to be hardcoded in individual rules, which made a
+     dark theme impossible. One definition per concept, overridden once. */
+  --tint: #F3F8F5;              /* soft inset panels: amounts, match rows */
+  --badge-bg: #E7F3EE;          /* "fits your cart" pill */
+  --code-bg: rgba(0, 0, 0, 0.04);
+  --topbar-bg: rgba(234, 242, 236, 0.85);
+  --danger: #B23A2A;
+  --danger-line: #F0C9C0;
+  --danger-tint: #FDF0ED;
+  --mutual-ink: #7A4A00;
+  --mutual-bg: #FFF0D4;
+  --grain-opacity: 0.035;
+
+  --blinkit-tint: #FEF6DC; --blinkit-on: #6B5410;
+  --zomato-tint: #FCE8EA;  --zomato-on: #8E1F29;
+  --swiggy-tint: #FFEEDD;  --swiggy-on: #8A4408;
+
   --radius: 18px;
   --font-display: "Fraunces", serif;
   --font-body: "Manrope", sans-serif;
   --font-mono: "IBM Plex Mono", monospace;
 }
+
+/* Dark theme.
+   Applied when the OS asks for it, unless the user has explicitly chosen
+   light; and always when they've explicitly chosen dark. The duplication is
+   the price of doing this without a preprocessor. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #E6EFEA;
+    --ink-soft: #B2C5BC;
+    --bg: #0F1A17;
+    --surface: #18251F;
+    --accent: #FF7C5E;
+    --accent-ink: #FFC9BA;
+    --accent2: #6FD0AC;
+    --muted: #869893;
+    --line: #2A3B34;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6);
+
+    --tint: #14231D;
+    --badge-bg: #1C3A30;
+    --code-bg: rgba(255, 255, 255, 0.06);
+    --topbar-bg: rgba(15, 26, 23, 0.85);
+    --danger: #FF9484;
+    --danger-line: #5B2C24;
+    --danger-tint: #2A1712;
+    --mutual-ink: #FFD79A;
+    --mutual-bg: #3B2A11;
+    --grain-opacity: 0.02;
+
+    --blinkit-tint: #3A3216; --blinkit-on: #F8CB46;
+    --zomato-tint: #3A1C20;  --zomato-on: #FF8A93;
+    --swiggy-tint: #3A2512;  --swiggy-on: #FFA662;
+  }
+}
+:root[data-theme="dark"] {
+  --ink: #E6EFEA;
+  --ink-soft: #B2C5BC;
+  --bg: #0F1A17;
+  --surface: #18251F;
+  --accent: #FF7C5E;
+  --accent-ink: #FFC9BA;
+  --accent2: #6FD0AC;
+  --muted: #869893;
+  --line: #2A3B34;
+  --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6);
+
+  --tint: #14231D;
+  --badge-bg: #1C3A30;
+  --code-bg: rgba(255, 255, 255, 0.06);
+  --topbar-bg: rgba(15, 26, 23, 0.85);
+  --danger: #FF9484;
+  --danger-line: #5B2C24;
+  --danger-tint: #2A1712;
+  --mutual-ink: #FFD79A;
+  --mutual-bg: #3B2A11;
+  --grain-opacity: 0.02;
+
+  --blinkit-tint: #3A3216; --blinkit-on: #F8CB46;
+  --zomato-tint: #3A1C20;  --zomato-on: #FF8A93;
+  --swiggy-tint: #3A2512;  --swiggy-on: #FFA662;
+}
+
+/* Let form controls, scrollbars and the like follow the theme automatically. */
+:root { color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; } }
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
 
 * { box-sizing: border-box; }
 
@@ -35,6 +120,7 @@ html, body {
 
 body {
   min-height: 100vh;
+  min-height: 100dvh;   /* iOS: 100vh includes the collapsing toolbar */
   position: relative;
 }
 
@@ -42,7 +128,7 @@ body {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  opacity: 0.035;
+  opacity: var(--grain-opacity);
   z-index: 0;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
@@ -60,6 +146,7 @@ a { color: inherit; }
 /* ---------- login gate ---------- */
 .login-gate {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -103,7 +190,7 @@ a { color: inherit; }
   min-height: 18px;
   margin: 12px 0 0;
 }
-.login-note.error { color: #B23A2A; }
+.login-note.error { color: var(--danger); }
 
 .login-diag {
   margin-top: 14px;
@@ -119,7 +206,7 @@ a { color: inherit; }
 .login-diag pre {
   margin: 10px 0 0;
   padding: 10px;
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--code-bg);
   border-radius: 8px;
   font-family: var(--font-mono);
   font-size: 10.5px;
@@ -157,7 +244,7 @@ a { color: inherit; }
 /* ---------- topbar ---------- */
 .topbar {
   border-bottom: 1px solid var(--line);
-  background: rgba(234,242,236,0.85);
+  background: var(--topbar-bg);
   backdrop-filter: blur(8px);
   position: sticky;
   top: 0;
@@ -200,6 +287,24 @@ a { color: inherit; }
   cursor: pointer;
 }
 .whoami-name:hover { border-color: var(--accent); }
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 100px;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.12s;
+}
+.icon-btn:hover { border-color: var(--accent); }
+.icon-btn:active { transform: scale(0.94); }
 
 /* ---------- hero ---------- */
 .hero {
@@ -302,9 +407,9 @@ a { color: inherit; }
   color: var(--app-on, var(--bg));
   box-shadow: 0 6px 16px -8px var(--app-accent, rgba(27, 42, 47, 0.5));
 }
-.filter-tab[data-app="Blinkit"] { --app-accent: #F8CB46; --app-tint: #FEF6DC; --app-on: #6B5410; }
-.filter-tab[data-app="Zomato"]  { --app-accent: #E23744; --app-tint: #FCE8EA; --app-on: #8E1F29; }
-.filter-tab[data-app="Swiggy"]  { --app-accent: #FC8019; --app-tint: #FFEEDD; --app-on: #8A4408; }
+.filter-tab[data-app="Blinkit"] { --app-accent: #F8CB46; --app-tint: var(--blinkit-tint); --app-on: var(--blinkit-on); }
+.filter-tab[data-app="Zomato"]  { --app-accent: #E23744; --app-tint: var(--zomato-tint); --app-on: var(--zomato-on); }
+.filter-tab[data-app="Swiggy"]  { --app-accent: #FC8019; --app-tint: var(--swiggy-tint); --app-on: var(--swiggy-on); }
 
 /* ---------- search ---------- */
 .search-bar {
@@ -391,7 +496,7 @@ a { color: inherit; }
   font-size: 11px;
   font-weight: 600;
   color: var(--accent2);
-  background: #E7F3EE;
+  background: var(--badge-bg);
   border-radius: 100px;
   padding: 2px 9px;
   margin-left: 6px;
@@ -528,7 +633,7 @@ a { color: inherit; }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: #F3F8F5;
+  background: var(--tint);
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 10px 6px;
@@ -641,13 +746,13 @@ a { color: inherit; }
   cursor: pointer;
 }
 .btn-ghost:hover { border-color: var(--accent2); color: var(--accent2); }
-.btn-danger { color: #B23A2A; border-color: #F0C9C0; }
-.btn-danger:hover { background: #FDF0ED; }
+.btn-danger { color: var(--danger); border-color: var(--danger-line); }
+.btn-danger:hover { background: var(--danger-tint); }
 
 .contact-reveal {
   margin-top: 10px;
   padding: 10px 12px;
-  background: #F3F8F5;
+  background: var(--tint);
   border: 1px dashed var(--line);
   border-radius: 10px;
   font-size: 13px;
@@ -691,7 +796,7 @@ a { color: inherit; }
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #F3F8F5;
+  background: var(--tint);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 10px 12px;
@@ -725,8 +830,8 @@ a { color: inherit; }
   font-family: var(--font-mono);
   font-size: 10.5px;
   font-weight: 600;
-  color: #7A4A00;
-  background: #FFF0D4;
+  color: var(--mutual-ink);
+  background: var(--mutual-bg);
   border-radius: 100px;
   padding: 2px 8px;
 }
@@ -803,7 +908,9 @@ a { color: inherit; }
   border-radius: 22px 22px 0 0;
   padding: 22px 22px 28px;
   max-height: 90vh;
+  max-height: 90dvh;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   box-shadow: 0 -10px 40px rgba(0,0,0,0.25);
   animation: slideup 0.25s ease both;
 }
@@ -905,11 +1012,65 @@ button:focus-visible, a:focus-visible {
   * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
 
+/* ---------- phones ---------- */
+
+/* iOS Safari zooms the entire page when a focused input's font-size is below
+   16px, and never zooms back out. Every control has to clear that bar on
+   touch devices, whatever it looks like on desktop. */
+@media (max-width: 820px) {
+  .field input,
+  .field select,
+  .field textarea,
+  .search-main input,
+  .search-filters .field input,
+  .search-filters .field select,
+  .quick-post select,
+  .quick-post-amount input {
+    font-size: 16px;
+  }
+}
+
+/* Tap feedback shouldn't be a grey rectangle over rounded cards. */
+@media (hover: none) {
+  * { -webkit-tap-highlight-color: transparent; }
+  .btn:active, .btn-ghost:active, .filter-tab:active, .icon-btn:active { opacity: 0.75; }
+  /* hover styles stick on touch after a tap — don't define them here */
+  .filter-tab:hover { border-color: var(--line); }
+  .btn-ghost:hover { border-color: var(--line); color: var(--ink); }
+}
+
+/* Notched phones: keep content out of the home indicator and the ears. */
+@supports (padding: max(0px)) {
+  .wrap {
+    padding-left: max(20px, env(safe-area-inset-left));
+    padding-right: max(20px, env(safe-area-inset-right));
+  }
+  .footer { padding-bottom: max(48px, env(safe-area-inset-bottom)); }
+  .modal { padding-bottom: max(28px, env(safe-area-inset-bottom)); }
+}
+
 @media (max-width: 480px) {
   .field-row { grid-template-columns: 1fr; }
   .card { grid-template-columns: 64px 1fr; padding: 14px; }
   .amount-block { width: 64px; padding: 8px 4px; }
   .amount-value { font-size: 16px; }
+
+  /* 44px minimum touch targets — the bubbles were ~30px tall. */
+  .filter-tab { min-height: 44px; padding: 8px 14px 8px 10px; font-size: 12.5px; }
+  .btn { min-height: 44px; }
+  .btn-ghost { min-height: 40px; }
+  .icon-btn, .whoami-name { min-height: 38px; }
+  .modal-close { min-width: 44px; min-height: 44px; }
+
+  /* The topbar crowds badly once the name is in it. */
+  .topbar-inner { height: 56px; }
+  .whoami-email { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .board-controls { gap: 10px; }
+  .board-heading { font-size: 17px; }
+
+  .card-outlet { max-width: 120px; }
+  .card-top { row-gap: 4px; }
 
   /* Get the board closer to the top: the hero is nice, but it isn't why
      anyone opened the app. */

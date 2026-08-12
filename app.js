@@ -361,6 +361,50 @@ clearSearchBtn.addEventListener("click", () => {
   sQuery.focus();
 });
 
+/* ---------------- theme ----------------
+   Follows the OS by default. Once the toggle is used, that choice is stored
+   and wins until it's changed again. The initial application happens in an
+   inline script in index.html, before first paint — this only handles the
+   toggle and keeps the browser chrome colour in sync. */
+const THEME_KEY = "orderup_theme";
+const themeToggle = document.getElementById("themeToggle");
+const themeToggleIcon = document.getElementById("themeToggleIcon");
+const themeColorMeta = document.getElementById("themeColor");
+const darkQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+
+function storedTheme() {
+  try { return localStorage.getItem(THEME_KEY); } catch { return null; }
+}
+function resolvedTheme() {
+  const explicit = document.documentElement.dataset.theme;
+  if (explicit === "dark" || explicit === "light") return explicit;
+  return darkQuery && darkQuery.matches ? "dark" : "light";
+}
+function applyTheme(theme) {
+  if (theme) document.documentElement.dataset.theme = theme;
+  else delete document.documentElement.dataset.theme;
+
+  const dark = resolvedTheme() === "dark";
+  if (themeColorMeta) themeColorMeta.setAttribute("content", dark ? "#0F1A17" : "#EAF2EC");
+  if (themeToggleIcon) themeToggleIcon.textContent = dark ? "☀" : "☾";
+  if (themeToggle) {
+    themeToggle.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
+  }
+}
+
+themeToggle.addEventListener("click", () => {
+  const next = resolvedTheme() === "dark" ? "light" : "dark";
+  try { localStorage.setItem(THEME_KEY, next); } catch { /* storage blocked */ }
+  applyTheme(next);
+});
+
+// Track the OS only while the user hasn't expressed a preference of their own.
+if (darkQuery && darkQuery.addEventListener) {
+  darkQuery.addEventListener("change", () => { if (!storedTheme()) applyTheme(null); });
+}
+
+applyTheme(storedTheme());
+
 /* ---------------- toast ---------------- */
 function toast(msg) {
   toastEl.textContent = msg;
