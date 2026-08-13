@@ -26,6 +26,12 @@ const APPS = {
   Swiggy: { label: "Swiggy", initial: "s", needsOutlet: true }
 };
 const DEFAULT_APP = "Blinkit";
+const FILTER_ALL = "all";
+const FILTER_MINE = "mine";
+
+// "all" and "mine" are filters but not apps, so they can't go through
+// isKnownApp() — which also guards the post form's app default.
+const isValidFilter = (f) => f === FILTER_ALL || f === FILTER_MINE || isKnownApp(f);
 
 // Pre-loaded because free text fragments outlet names, and matching depends on
 // two people naming the same outlet the same way. "Other" stays available.
@@ -42,12 +48,16 @@ const OUTLET_OTHER = "__other__";
    background. To swap in an official asset, replace one entry here: nothing
    else in the codebase references these shapes. */
 const APP_ICONS = {
-  // Blinkit — lightning bolt (their "instant delivery" mark)
-  Blinkit: `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M13.4 1.9 5.7 13.2c-.3.4 0 1 .5 1h3.9l-1.4 7.3c-.1.5.6.8.9.4l7.8-11.3c.3-.4 0-1-.5-1h-3.9l1.3-7.3c.1-.5-.6-.8-.9-.4z"/></svg>`,
-  // Zomato — the Z letterform
-  Zomato: `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M5.3 3.6h13.4v3L10 17.4h8.7v3H5.3v-3l8.7-10.8H5.3z"/></svg>`,
-  // Swiggy — the S curve
-  Swiggy: `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2.9" stroke-linecap="round" d="M16.8 6.4C15.5 5.1 13.9 4.5 12 4.5c-2.7 0-4.5 1.4-4.5 3.4 0 4 9.1 2.3 9.1 6.6 0 2.2-2 3.7-4.8 3.7-2.1 0-4-.9-5.3-2.4"/></svg>`
+  // Taken from each brand's own artwork in things/, not redrawn.
+  //
+  // Blinkit and Zomato only ship wordmarks, which are an illegible smear at
+  // 20px — so these are the first letterform lifted out of each, cropped to
+  // its own bounding box. Swiggy ships an actual symbol, so that's used whole.
+  // Every fill is currentColor, which the .app-dot rule in style.css sets, so
+  // one icon works on a coloured pill, a card and a dark background alike.
+  Blinkit: `<svg viewBox="99.8 1276 948 948" aria-hidden="true" focusable="false"><path fill="currentColor" d="M630.461 1544.23C681.09 1544.23 726.294 1556.88 766.074 1582.19C806.215 1607.13 837.678 1642.55 860.461 1688.46C882.52 1732.56 893.55 1784.43 893.55 1844.07C893.55 1901.91 882.52 1953.6 860.461 1999.15C838.401 2044.69 807.3 2080.3 767.159 2105.96C726.656 2131.99 681.09 2145 630.461 2145C593.575 2145 558.858 2137.41 526.311 2122.23C493.763 2107.05 465.918 2085.72 442.773 2058.25V2131.44H254V1355H442.773V1630.44C465.918 1602.97 493.763 1581.82 526.311 1567C558.858 1551.82 593.575 1544.23 630.461 1544.23ZM574.046 1988.3C600.807 1988.3 624.675 1982.16 645.65 1969.87C666.625 1957.58 683.079 1940.41 695.013 1918.36C706.947 1896.67 712.914 1871.91 712.914 1844.07C712.914 1816.96 706.947 1792.38 695.013 1770.33C683.079 1748.28 666.625 1731.11 645.65 1718.82C624.675 1706.53 600.807 1700.39 574.046 1700.39C548.732 1700.39 526.13 1706.53 506.24 1718.82C486.35 1730.75 470.8 1747.56 459.589 1769.25C448.378 1791.3 442.773 1816.24 442.773 1844.07C442.773 1871.91 448.378 1896.85 459.589 1918.9C470.8 1940.59 486.35 1957.58 506.24 1969.87C526.13 1982.16 548.732 1988.3 574.046 1988.3Z"/></svg>`,
+  Zomato: `<svg viewBox="-45.5 95.8 472.1 472.1" aria-hidden="true" focusable="false"><path fill="currentColor" d="m381.02 135.1-2.25 72.32-188.62 205.03c78.79 0 128.75-.77 157.56-2.37-8.35 38.91-15.14 70.72-21.98 118.41-37.89-3.2-96.96-4-156.06-4-65.88 0-123.46.79-169.67 4l1.54-73.14 188.61-204.21c-82.57 0-112.88.78-146.95 1.58 7.55-36.56 12.86-77.07 18.16-117.62 59.84 2.38 83.32 3.16 161.35 3.16 71.97.01 112.85-.78 158.31-3.16z"/></svg>`,
+  Swiggy: `<svg viewBox="-971.6 -366.7 4443.4 4443.4" aria-hidden="true" focusable="false"><path fill="currentColor" d="m1255.2 3706.3c-2.4-1.7-5-4-7.8-6.3-44.6-55.3-320.5-400.9-601.6-844.2-84.4-141.2-139.1-251.4-128.5-279.9 27.5-74.1 517.6-114.7 668.5-47.5 45.9 20.4 44.7 47.3 44.7 63.1 0 67.8-3.3 249.8-3.3 249.8 0 37.6 30.5 68.1 68.2 68 37.7 0 68.1-30.7 68-68.4l-.7-453.3h-.1c0-39.4-43-49.2-51-50.8-78.8-.5-238.7-.9-410.5-.9-379 0-463.8 15.6-528-26.6-139.5-91.2-367.6-706-372.9-1052-7.5-488 281.5-910.5 688.7-1119.8 170-85.6 362-133.9 565-133.9 644.4 0 1175.2 486.4 1245.8 1112.3 0 .5 0 1.2.1 1.7 13 151.3-820.9 183.4-985.8 139.4-25.3-6.7-31.7-32.7-31.7-43.8-.1-115-.9-438.8-.9-438.8-.1-37.7-30.7-68.1-68.4-68.1-37.6 0-68.1 30.7-68.1 68.4l1.5 596.4c1.2 37.6 32.7 47.7 41.4 49.5 93.8 0 313.1-.1 517.4-.1 276.1 0 392.1 32 469.3 90.7 51.3 39.1 71.1 114 53.8 211.4-154.9 866-1135.9 1939.1-1172.8 1983.8z"/></svg>`
 };
 
 const isKnownApp = (app) => Object.prototype.hasOwnProperty.call(APPS, app);
@@ -270,6 +280,10 @@ const getSavedExpiry = () => getSavedField("expiry");
 const saveExpiry = (v) => saveField("expiry", v);
 const getSavedOutlet = () => getSavedField("outlet");
 const saveOutlet = (v) => saveField("outlet", v);
+// Kept separate from "app": the filter can be "all"/"mine", which must never
+// leak into the post form's default app.
+const getSavedFilter = () => getSavedField("filter");
+const saveFilter = (v) => saveField("filter", v);
 
 function hasQuickPostDefaults() {
   // A contact saved before numbers were required could be an Instagram handle
@@ -342,6 +356,7 @@ const matchIntro = document.getElementById("matchIntro");
 const matchList = document.getElementById("matchList");
 
 const filterTabs = document.getElementById("filterTabs");
+const filterStrip = document.querySelector(".filter-strip");
 let currentFilter = DEFAULT_APP;   // "Blinkit" | "Zomato" | "Swiggy" | "mine"
 let latestOrders = [];
 
@@ -408,13 +423,157 @@ if (darkQuery && darkQuery.addEventListener) {
 
 applyTheme(storedTheme());
 
+/* ---------------- sharing ----------------
+   The share sheet is how orders actually travel: students already coordinate
+   in WhatsApp hostel groups, so the cheapest way onto the board is a link
+   pasted into a group someone is already in.
+
+   Note what's NOT in the text: the contact number. Sharing an order must not
+   leak the poster's phone into a group chat — the link lands on the card, and
+   whoever's interested taps "I'm in" like everyone else. */
+function orderShareText(o) {
+  const where = o.outlet ? `${o.app} · ${o.outlet}` : o.app;
+  const left = timeLeftLabel(o.expiresAt).label.replace(" left", "");
+  const at = o.location ? ` Meet at ${o.location}.` : "";
+  return `${where} — ₹${o.target} more needed to hit free delivery.${at} Closes in ${left}.`;
+}
+
+function orderShareUrl(o) {
+  return `${location.origin}${location.pathname}?order=${encodeURIComponent(o.id)}`;
+}
+
+async function shareOrder(o) {
+  const url = orderShareUrl(o);
+  const text = orderShareText(o);
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "OrderUp", text, url });
+      return;
+    } catch (err) {
+      // The user backing out of the sheet is not a failure worth reporting.
+      if (err && err.name === "AbortError") return;
+      console.error("[orderup] share failed, falling back to clipboard:", err);
+    }
+  }
+
+  // Desktop Firefox and anything else without the share sheet.
+  try {
+    await navigator.clipboard.writeText(`${text}\n${url}`);
+    toast("Link copied — paste it in your group");
+  } catch {
+    toast("Couldn't share on this browser");
+  }
+}
+
+/* ---------------- deep links (?order=…) ----------------
+   Captured once at load and stashed, because the journey from a shared link
+   to the board can pass through the login gate. Kept in sessionStorage so it
+   also survives the redirect sign-in fallback, which reloads the page. */
+const DEEP_LINK_KEY = "orderup_deeplink";
+
+function readDeepLink() {
+  let fromUrl = null;
+  try { fromUrl = new URLSearchParams(location.search).get("order"); } catch { /* ignore */ }
+  if (fromUrl) {
+    try { sessionStorage.setItem(DEEP_LINK_KEY, fromUrl); } catch { /* storage blocked */ }
+    // Strip it so a later refresh doesn't keep re-opening the same card.
+    try { history.replaceState(null, "", location.pathname); } catch { /* ignore */ }
+    return fromUrl;
+  }
+  try { return sessionStorage.getItem(DEEP_LINK_KEY); } catch { return null; }
+}
+
+let pendingDeepLink = readDeepLink();
+let highlightAfterRender = null;
+
+function clearDeepLink() {
+  pendingDeepLink = null;
+  try { sessionStorage.removeItem(DEEP_LINK_KEY); } catch { /* ignore */ }
+}
+
+// Runs once the first real snapshot has landed, so we can tell "not loaded
+// yet" apart from "that order is gone".
+function maybeConsumeDeepLink() {
+  if (!pendingDeepLink) return;
+
+  const wanted = pendingDeepLink;
+  const target = latestOrders.find(o => o.id === wanted);
+  clearDeepLink();
+
+  if (!target || (target.expiresAt || 0) <= Date.now()) {
+    toast("That order has already closed");
+    return;
+  }
+
+  // Send them to the tab the order actually lives in, and clear any filter
+  // that would hide the very card they followed a link to.
+  if (isKnownApp(target.app)) {
+    currentFilter = target.app;
+    applyFilterUI();
+  }
+  sQuery.value = "";
+  sMaxTime.value = "0";
+
+  highlightAfterRender = wanted;
+}
+
+/* ---------------- on-screen keyboard ----------------
+   iOS keeps `position: fixed` elements pinned to the layout viewport, which
+   does not shrink when the keyboard opens — so the toast was rendering behind
+   the keyboard, hiding validation messages at the exact moment they're needed.
+   visualViewport reports the area actually visible; the difference is what the
+   keyboard is covering, and CSS lifts the toast by that much. */
+const visualVP = window.visualViewport;
+
+function syncKeyboardInset() {
+  if (!visualVP) return;
+  const covered = Math.max(0, window.innerHeight - visualVP.height - visualVP.offsetTop);
+  document.documentElement.style.setProperty("--kb-inset", covered + "px");
+}
+
+if (visualVP) {
+  visualVP.addEventListener("resize", syncKeyboardInset);
+  visualVP.addEventListener("scroll", syncKeyboardInset);
+  syncKeyboardInset();
+}
+
 /* ---------------- toast ---------------- */
 function toast(msg) {
+  syncKeyboardInset(); // the keyboard may already be up when this fires
   toastEl.textContent = msg;
   toastEl.classList.add("show");
   clearTimeout(toast._t);
   toast._t = setTimeout(() => toastEl.classList.remove("show"), 2200);
 }
+
+/* ---------------- inline field validation ---------------- */
+function clearFieldErrors() {
+  postForm.querySelectorAll(".field-error").forEach(el => el.remove());
+  postForm.querySelectorAll(".has-error").forEach(el => el.classList.remove("has-error"));
+}
+
+// Puts the message directly under the offending field, scrolls it into view
+// inside the modal, and still toasts so the feedback is impossible to miss.
+function showFieldError(input, msg) {
+  clearFieldErrors();
+  const field = input.closest(".field") || input.parentElement;
+  const err = document.createElement("span");
+  err.className = "field-error";
+  err.textContent = msg;
+  field.appendChild(err);
+  input.classList.add("has-error");
+
+  // Scroll first, then focus without scrolling again — focus() alone doesn't
+  // reliably bring a field into view inside a scrollable modal on iOS.
+  try { input.scrollIntoView({ block: "center", behavior: "smooth" }); } catch { /* older browsers */ }
+  try { input.focus({ preventScroll: true }); } catch { input.focus(); }
+
+  toast(msg);
+}
+
+postForm.addEventListener("input", clearFieldErrors);
+postForm.addEventListener("change", clearFieldErrors);
 
 /* ---------------- modal helpers ---------------- */
 function openModal(el) { el.classList.add("open"); }
@@ -422,29 +581,67 @@ function closeModal(el) { el.classList.remove("open"); }
 
 /* ---------------- filter tabs ---------------- */
 function applyFilterUI() {
+  let activeBtn = null;
   [...filterTabs.children].forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.filter === currentFilter);
+    const on = btn.dataset.filter === currentFilter;
+    btn.classList.toggle("active", on);
+    if (on) activeBtn = btn;
   });
 
-  const isMine = currentFilter === "mine";
-  boardHeading.textContent = isMine ? "Your orders" : `${currentFilter} orders`;
-
-  // Searching outlets only means anything on the marketplaces.
-  if (isMine) {
+  if (currentFilter === FILTER_MINE) {
+    boardHeading.textContent = "Your orders";
     sQuery.placeholder = "Search your orders…";
-  } else if (appNeedsOutlet(currentFilter)) {
-    sQuery.placeholder = `Search ${currentFilter} outlets…`;
+  } else if (currentFilter === FILTER_ALL) {
+    boardHeading.textContent = "All orders";
+    sQuery.placeholder = "Search every app…";
   } else {
-    sQuery.placeholder = `Search ${currentFilter} items…`;
+    boardHeading.textContent = `${currentFilter} orders`;
+    // Searching outlets only means anything on the marketplaces.
+    sQuery.placeholder = appNeedsOutlet(currentFilter)
+      ? `Search ${currentFilter} outlets…`
+      : `Search ${currentFilter} items…`;
   }
 
+  // Five bubbles no longer fit on the narrowest phones, so the strip scrolls.
+  // Keep whichever is selected visible, or the tab you just picked can end up
+  // off-screen after a deep link switches it for you.
+  ensureTabVisible(activeBtn);
+  syncFilterStripFade();
+
   refreshQuickPostBar();
+}
+
+// scrollIntoView({ inline: "nearest" }) is unreliable inside a padded
+// horizontal scroller — it under-scrolls, and can move the page instead of the
+// strip. Computing the offset ourselves is deterministic and never touches
+// vertical scroll position.
+function ensureTabVisible(btn) {
+  if (!filterStrip || !btn) return;
+  const strip = filterStrip.getBoundingClientRect();
+  const tab = btn.getBoundingClientRect();
+  const margin = 12; // leave a sliver of the neighbouring bubble showing
+
+  if (tab.right > strip.right - margin) {
+    filterStrip.scrollLeft += tab.right - strip.right + margin;
+  } else if (tab.left < strip.left + margin) {
+    filterStrip.scrollLeft -= (strip.left + margin) - tab.left;
+  }
+}
+
+// Fades the right edge of the filter row while there's more to scroll to.
+function syncFilterStripFade() {
+  if (!filterStrip) return;
+  const overflow = filterStrip.scrollWidth - filterStrip.clientWidth;
+  filterStrip.classList.toggle("is-scrollable", overflow > 4);
+  filterStrip.classList.toggle("at-end", filterStrip.scrollLeft >= overflow - 4);
 }
 
 filterTabs.addEventListener("click", (e) => {
   const btn = e.target.closest(".filter-tab");
   if (!btn) return;
   currentFilter = btn.dataset.filter;
+  saveFilter(currentFilter);
+  // Only an actual app becomes the post form's default.
   if (isKnownApp(currentFilter)) saveApp(currentFilter);
   applyFilterUI();
   render();
@@ -709,16 +906,14 @@ postForm.addEventListener("submit", async (e) => {
 
   const outlet = readOutlet();
   if (appNeedsOutlet(appVal) && !outlet) {
-    toast("Which outlet? Pick one or type it in");
-    (fOutletOther.hidden ? fOutlet : fOutletOther).focus();
+    showFieldError(fOutletOther.hidden ? fOutlet : fOutletOther, "Pick an outlet or type it in");
     return;
   }
 
   const currentInput = document.getElementById("fCurrent");
   const current = Number(currentInput.value);
   if (!current || current <= 0) {
-    toast("Enter your cart value — it's what finds your matches");
-    currentInput.focus();
+    showFieldError(currentInput, "Enter your cart value — it's what finds your matches");
     return;
   }
 
@@ -728,15 +923,13 @@ postForm.addEventListener("submit", async (e) => {
   const targetInput = document.getElementById("fTarget");
   const target = Number(targetInput.value);
   if (!target || target <= 0) {
-    toast("How much ₹ more do you need?");
-    targetInput.focus();
+    showFieldError(targetInput, "How much ₹ more do you need?");
     return;
   }
 
   const locationInput = document.getElementById("fLocation");
   if (!locationInput.value.trim()) {
-    toast("Where should they meet you?");
-    locationInput.focus();
+    showFieldError(locationInput, "Where should they meet you?");
     return;
   }
 
@@ -745,8 +938,7 @@ postForm.addEventListener("submit", async (e) => {
   const contactInput = document.getElementById("fContact");
   const contact = normalizePhone(contactInput.value);
   if (!contact) {
-    toast("Enter a valid 10-digit mobile number");
-    contactInput.focus();
+    showFieldError(contactInput, "Enter a valid 10-digit mobile number");
     return;
   }
 
@@ -891,6 +1083,9 @@ function startOrdersListener() {
     // take the subscription with it — one malformed doc would then freeze
     // the board until a manual refresh. Contain it.
     try {
+      // Resolve any followed link now that we actually have the board — this
+      // can switch tabs and clear filters, so it must run before render().
+      maybeConsumeDeepLink();
       render();
     } catch (err) {
       console.error("[orderup] render failed:", err);
@@ -1011,8 +1206,10 @@ function cardInnerHTML(o, myValue, pool) {
           ${isMine
       ? `<button class="btn-ghost" data-edit="${o.id}">Edit</button>
              <button class="btn-ghost" data-extend="${o.id}">+15 min</button>
+             <button class="btn-ghost" data-share="${o.id}">Share</button>
              <button class="btn-ghost btn-danger" data-remove="${o.id}">Remove</button>`
-      : `<button class="btn-ghost" data-join="${o.id}">I'm in — show contact</button>`
+      : `<button class="btn-ghost" data-join="${o.id}">I'm in — show contact</button>
+             <button class="btn-ghost" data-share="${o.id}">Share</button>`
     }
         </div>
         <div class="contact-slot"></div>
@@ -1073,6 +1270,11 @@ function wireCardEvents(el, o, pool) {
     });
   }
 
+  const shareBtn = el.querySelector("[data-share]");
+  if (shareBtn) {
+    shareBtn.addEventListener("click", () => shareOrder(o));
+  }
+
   const editBtn = el.querySelector("[data-edit]");
   if (editBtn) {
     editBtn.addEventListener("click", () => openPostModal(o));
@@ -1118,9 +1320,10 @@ function render() {
   // filtering the board shouldn't change who can actually club together.
   const pool = active;
 
-  let visible = currentFilter === "mine"
-    ? active.filter(o => o.posterId === myId)
-    : active.filter(o => o.app === currentFilter);
+  let visible =
+    currentFilter === FILTER_MINE ? active.filter(o => o.posterId === myId) :
+    currentFilter === FILTER_ALL ? active :
+    active.filter(o => o.app === currentFilter);
 
   // ---- search + filters ----
   const myValueRaw = sMyValue.value;
@@ -1215,6 +1418,18 @@ function render() {
   [...board.children].forEach(el => {
     if (!stillPresent.has(el.dataset.orderId)) el.remove();
   });
+
+  // Someone followed a shared link — take them to the card and mark it, so it
+  // is obvious which of several orders they were sent to.
+  if (highlightAfterRender) {
+    const el = board.querySelector(`[data-order-id="${highlightAfterRender}"]`);
+    highlightAfterRender = null;
+    if (el) {
+      el.classList.add("card-highlight");
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setTimeout(() => el.classList.remove("card-highlight"), 2600);
+    }
+  }
 }
 
 /* Single source of truth for "is this a usable number?".
@@ -1256,6 +1471,14 @@ setInterval(render, 30000);
 /* ---------------- init ---------------- */
 paintAppIcons();   // upgrade the filter bubbles' letter fallbacks to real logos
 
+if (filterStrip) {
+  filterStrip.addEventListener("scroll", syncFilterStripFade, { passive: true });
+  window.addEventListener("resize", syncFilterStripFade);
+  // Bubble widths change once the web font swaps in.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(syncFilterStripFade);
+  syncFilterStripFade();
+}
+
 /* ---------------- auth observer ----------------
    Registered LAST, deliberately. Everything below the sign-in handler —
    currentFilter, the DOM refs, applyFilterUI, refreshQuickPostBar,
@@ -1276,7 +1499,10 @@ onAuthStateChanged(auth, (user) => {
       showLoginNote("", false);
       loginGate.hidden = true;
       appRoot.hidden = false;
-      currentFilter = isKnownApp(getSavedApp()) ? getSavedApp() : DEFAULT_APP;
+      // Land on whatever tab they left on. New users start on "All" — a board
+      // that shows everything is a better first impression than one filtered
+      // to a single app that may well be empty.
+      currentFilter = isValidFilter(getSavedFilter()) ? getSavedFilter() : FILTER_ALL;
       applyFilterUI();
       refreshQuickPostBar();
       startOrdersListener(); // only read once we have a valid, verified auth token
