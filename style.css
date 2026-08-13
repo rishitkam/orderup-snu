@@ -331,14 +331,6 @@ a { color: inherit; }
   font-weight: 500;
   color: var(--accent);
 }
-.hero-sub {
-  font-size: 16px;
-  line-height: 1.55;
-  color: var(--ink-soft);
-  max-width: 480px;
-  margin: 0;
-}
-
 /* ---------- app identity ----------
    Each app gets a brand colour that drives its filter bubble, its card accent
    and its dot. Kept as custom properties so a card can set --app-accent once
@@ -1124,7 +1116,6 @@ button:focus-visible, a:focus-visible {
   /* Get the board closer to the top: the hero is nice, but it isn't why
      anyone opened the app. */
   .hero { padding: 28px 0 20px; }
-  .hero-sub { font-size: 15px; }
 
   /* All four bubbles — including "Mine" — must fit on a 360px screen. A tab
      you can only reach by discovering a horizontal scroll is a tab most
