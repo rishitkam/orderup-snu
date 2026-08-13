@@ -13,7 +13,36 @@ import {
 const ORDERS_COL = "orders";
 const EXTEND_BY_MS = 15 * 60 * 1000;
 // Ceiling on "+15 min" so a forgotten order can't be kept alive indefinitely.
-const MAX_REMAINING_MS = 3 * 60 * 60 * 1000;
+// A day is the natural bound now that orders can run until midnight.
+const MAX_REMAINING_MS = 24 * 60 * 60 * 1000;
+
+/* ---------------- expiry ----------------
+   Every other option is a duration in minutes; this one is an absolute time,
+   so it travels as a sentinel string rather than a number. */
+const EXPIRY_ALL_DAY = "day";
+const MIN_ALL_DAY_MS = 30 * 60 * 1000;
+
+function endOfToday() {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+}
+
+function expiryToTimestamp(value) {
+  if (value !== EXPIRY_ALL_DAY) {
+    return Date.now() + (Number(value) || 0) * 60 * 1000;
+  }
+  // Posting "all day" at 23:50 would otherwise expire in ten minutes, which is
+  // useless. Guarantee a floor, even if that spills past midnight.
+  return Math.max(endOfToday(), Date.now() + MIN_ALL_DAY_MS);
+}
+
+// True for orders set to run until tonight's midnight, so they can be labelled
+// as such instead of counting down "13h 42m left".
+function isAllDay(expiresAt) {
+  const d = new Date(Number(expiresAt) || 0);
+  return d.getHours() === 23 && d.getMinutes() === 59;
+}
 const IS_MOBILE = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
 /* ---------------- apps ----------------
@@ -41,6 +70,37 @@ const POPULAR_OUTLETS = [
   "Chaayos", "Theobroma", "Haldiram's", "Rolls Mania", "Biryani Blues"
 ];
 const OUTLET_OTHER = "__other__";
+
+/* ---------------- pickup points ----------------
+   Riders don't come to your room, they stop at a gate or a landmark and you
+   walk down. So the meaningful location is the handover spot, not the
+   building: two people in Cluster 1 and Cluster 2 are both walking to
+   Parking 1 anyway, which makes them far better matched than their block
+   numbers suggest.
+
+   `value` is what gets stored and shown on cards, kept short so it fits.
+   `label` carries the buildings each spot covers, which only matters while
+   you're choosing. A closed list (no free text) keeps these comparable, so
+   they can drive filtering or proximity ranking later without everyone having
+   spelled the same place five different ways. */
+const PICKUP_POINTS = [
+  { value: "Parking 1", label: "Parking 1 (Cluster 1, Cluster 2, UAC)" },
+  { value: "Inner gate", label: "Inner gate (Cluster 3)" },
+  { value: "Cluster 4 & 5", label: "Cluster 4 & 5 (DH3)" },
+  { value: "Cluster 6", label: "Cluster 6" },
+  { value: "DH2", label: "DH2" },
+  { value: "Acad blocks", label: "Acad blocks (A, B, C, D & library)" },
+  { value: "G block", label: "G block" },
+  { value: "Towers", label: "Towers (6 & 9)" }
+];
+
+const isKnownPickup = (v) => PICKUP_POINTS.some(p => p.value === v);
+
+function populatePickupSelect(sel, placeholder) {
+  if (!sel) return;
+  sel.innerHTML = `<option value="">${escapeHtml(placeholder || "Choose a drop location…")}</option>`
+    + PICKUP_POINTS.map(p => `<option value="${escapeHtml(p.value)}">${escapeHtml(p.label)}</option>`).join("");
+}
 
 /* Brand marks, drawn as inline SVG so they work offline and inside the service
    worker cache — no external image requests. Each uses currentColor, so the
@@ -151,12 +211,12 @@ function showDiag(reason) {
    already open *before* the page loaded — which is how a dead auth observer
    went unnoticed while the console looked perfectly clean. */
 window.addEventListener("error", (e) => {
-  showLoginNote("Something failed to load — details below.", true);
+  showLoginNote("Something failed to load. Details below.", true);
   showDiag("uncaught: " + ((e.error && e.error.message) || e.message));
 });
 window.addEventListener("unhandledrejection", (e) => {
   const r = e.reason;
-  showLoginNote("Something failed to load — details below.", true);
+  showLoginNote("Something failed to load. Details below.", true);
   showDiag("unhandled rejection: " + ((r && (r.code || r.message)) || String(r)));
 });
 
@@ -214,7 +274,7 @@ googleSignInBtn.addEventListener("click", async () => {
       return;
     }
 
-    showLoginNote("Couldn't sign in — please try again.", true);
+    showLoginNote("Couldn't sign in. Please try again.", true);
     showDiag((err && err.code) || String(err));
   }
 });
@@ -238,7 +298,7 @@ getRedirectResult(auth).then((result) => {
 }).catch((err) => {
   consumeRedirectStarted();
   console.error(err);
-  showLoginNote("Couldn't finish signing in — please try again.", true);
+  showLoginNote("Couldn't finish signing in. Please try again.", true);
   showDiag((err && err.code) || String(err));
 });
 
@@ -290,7 +350,9 @@ function hasQuickPostDefaults() {
   // or a room number. Treat those as "no default" so the user is sent through
   // the full form once to supply a real number, rather than quick-posting
   // something nobody can call.
-  return !!(normalizePhone(getSavedContact()) && getSavedLocation());
+  // A location saved before pickup points existed is free text, so send them
+  // through the full form once to choose a real spot.
+  return !!(normalizePhone(getSavedContact()) && isKnownPickup(getSavedLocation()));
 }
 
 /* ---------------- matching ----------------
@@ -362,14 +424,21 @@ let latestOrders = [];
 
 /* ---------------- search ---------------- */
 const searchBar = document.getElementById("searchBar");
+const searchPanel = document.getElementById("searchPanel");
+const filterPanel = document.getElementById("filterPanel");
+const searchToggle = document.getElementById("searchToggle");
+const filterToggle = document.getElementById("filterToggle");
+const filterDot = document.getElementById("filterDot");
+const clearFiltersBtn = document.getElementById("clearFilters");
 const sQuery = document.getElementById("sQuery");
+const sLocation = document.getElementById("sLocation");
 const sMyValue = document.getElementById("sMyValue");
 const sMaxTime = document.getElementById("sMaxTime");
 const sSort = document.getElementById("sSort");
 const clearSearchBtn = document.getElementById("clearSearch");
 const searchHint = document.getElementById("searchHint");
 
-[sQuery, sMyValue, sMaxTime, sSort].forEach(el => {
+[sQuery, sLocation, sMyValue, sMaxTime, sSort].forEach(el => {
   el.addEventListener("input", render);
   el.addEventListener("change", render);
 });
@@ -378,6 +447,47 @@ clearSearchBtn.addEventListener("click", () => {
   render();
   sQuery.focus();
 });
+
+/* ---------------- search & filter panels ----------------
+   Kept collapsed by default: shown permanently they pushed the board below
+   the fold, and the board is the whole product. */
+const ICON_SEARCH = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" style="width:17px;height:17px">
+  <circle cx="10.5" cy="10.5" r="6.4" fill="none" stroke="currentColor" stroke-width="2"/>
+  <path d="M15.4 15.4 21 21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+const ICON_FILTER = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" style="width:17px;height:17px">
+  <path fill="currentColor" d="M3.6 5.3A1 1 0 0 1 4.5 4h15a1 1 0 0 1 .78 1.63l-5.78 7.2v5.3a1 1 0 0 1-1.45.9l-3-1.5a1 1 0 0 1-.55-.9v-3.8L3.72 5.63a1 1 0 0 1-.12-.33z"/></svg>`;
+
+searchToggle.insertAdjacentHTML("afterbegin", ICON_SEARCH);
+filterToggle.insertAdjacentHTML("afterbegin", ICON_FILTER);
+
+function togglePanel(panel, btn, open) {
+  const show = open === undefined ? panel.hidden : open;
+  panel.hidden = !show;
+  btn.setAttribute("aria-expanded", show ? "true" : "false");
+  btn.classList.toggle("on", show);
+}
+
+searchToggle.addEventListener("click", () => {
+  togglePanel(searchPanel, searchToggle);
+  if (!searchPanel.hidden) sQuery.focus();
+});
+filterToggle.addEventListener("click", () => togglePanel(filterPanel, filterToggle));
+
+clearFiltersBtn.addEventListener("click", () => {
+  sLocation.value = "";
+  sMyValue.value = "";
+  sMaxTime.value = "0";
+  sSort.value = "match";
+  render();
+});
+
+// Dot on the filter icon whenever a filter is actually narrowing the board, so
+// a filtered view is never mistaken for the full one.
+function syncFilterDot() {
+  const active = sLocation.value !== "" || sMyValue.value.trim() !== ""
+    || sMaxTime.value !== "0" || sSort.value !== "match";
+  filterDot.hidden = !active;
+}
 
 /* ---------------- theme ----------------
    Follows the OS by default. Once the toggle is used, that choice is stored
@@ -433,9 +543,12 @@ applyTheme(storedTheme());
    whoever's interested taps "I'm in" like everyone else. */
 function orderShareText(o) {
   const where = o.outlet ? `${o.app} · ${o.outlet}` : o.app;
-  const left = timeLeftLabel(o.expiresAt).label.replace(" left", "");
   const at = o.location ? ` Meet at ${o.location}.` : "";
-  return `${where} — ₹${o.target} more needed to hit free delivery.${at} Closes in ${left}.`;
+  // "Closes in till midnight" is not a sentence — all-day orders get their own.
+  const closes = isAllDay(o.expiresAt)
+    ? "Open till midnight."
+    : `Closes in ${timeLeftLabel(o.expiresAt).label.replace(" left", "")}.`;
+  return `${where}: ₹${o.target} more needed to hit free delivery.${at} ${closes}`;
 }
 
 function orderShareUrl(o) {
@@ -460,7 +573,7 @@ async function shareOrder(o) {
   // Desktop Firefox and anything else without the share sheet.
   try {
     await navigator.clipboard.writeText(`${text}\n${url}`);
-    toast("Link copied — paste it in your group");
+    toast("Link copied. Paste it in your group");
   } catch {
     toast("Couldn't share on this browser");
   }
@@ -585,6 +698,7 @@ function applyFilterUI() {
   [...filterTabs.children].forEach(btn => {
     const on = btn.dataset.filter === currentFilter;
     btn.classList.toggle("active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
     if (on) activeBtn = btn;
   });
 
@@ -639,9 +753,18 @@ function syncFilterStripFade() {
 filterTabs.addEventListener("click", (e) => {
   const btn = e.target.closest(".filter-tab");
   if (!btn) return;
-  currentFilter = btn.dataset.filter;
+  const clicked = btn.dataset.filter;
+
+  // The three app tabs toggle: tapping the one that's already active clears
+  // it and drops you back to All, so narrowing and un-narrowing are the same
+  // gesture. "All" and "Mine" aren't narrowing filters, so they just select.
+  currentFilter = (isKnownApp(clicked) && clicked === currentFilter)
+    ? FILTER_ALL
+    : clicked;
+
   saveFilter(currentFilter);
-  // Only an actual app becomes the post form's default.
+  // Only an actual app becomes the post form's default — clearing back to All
+  // deliberately leaves the last app you used in place.
   if (isKnownApp(currentFilter)) saveApp(currentFilter);
   applyFilterUI();
   render();
@@ -656,7 +779,7 @@ function populateOutletSelect(sel, selectedOutlet) {
     known.push(selectedOutlet);
   }
   sel.innerHTML = known.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join("")
-    + `<option value="${OUTLET_OTHER}">Other — type it in</option>`;
+    + `<option value="${OUTLET_OTHER}">Other (type it in)</option>`;
   if (selectedOutlet) sel.value = selectedOutlet;
 }
 
@@ -697,9 +820,12 @@ const postSubmitBtn = postForm.querySelector('button[type="submit"]');
 // "Closes in" is always relative to now. When editing, preselect whichever
 // option is closest to the time the order has left, so saving without touching
 // it roughly preserves the existing deadline instead of silently resetting it.
-function closestExpiryOption(msLeft) {
+function closestExpiryOption(order) {
+  if (order && isAllDay(order.expiresAt)) return EXPIRY_ALL_DAY;
+  const msLeft = ((order && order.expiresAt) || 0) - Date.now();
   const mins = Math.max(1, Math.round(msLeft / 60000));
-  const opts = [...document.getElementById("fExpiry").options].map(o => Number(o.value));
+  const opts = [...document.getElementById("fExpiry").options]
+    .map(o => o.value).filter(v => v !== EXPIRY_ALL_DAY).map(Number);
   return String(opts.reduce((best, v) => Math.abs(v - mins) < Math.abs(best - mins) ? v : best, opts[0]));
 }
 
@@ -720,10 +846,13 @@ function openPostModal(order) {
   if (order) {
     // Editing: every field comes from the order itself, not from saved defaults.
     fContact.value = order.contact || "";
-    fLocation.value = order.location || "";
+    // Orders posted before pickup points existed carry free text that isn't in
+    // the list; leave the placeholder showing rather than silently reassigning
+    // them to whichever option happens to be first.
+    fLocation.value = isKnownPickup(order.location) ? order.location : "";
     fCurrent.value = order.current || "";
     fTarget.value = order.target || "";
-    fExpiry.value = closestExpiryOption((order.expiresAt || 0) - Date.now());
+    fExpiry.value = closestExpiryOption(order);
     contactHint.hidden = true;
     locationHint.hidden = true;
 
@@ -740,7 +869,7 @@ function openPostModal(order) {
   }
   if (!fLocation.value) {
     const saved = getSavedLocation();
-    if (saved) { fLocation.value = saved; locationHint.hidden = false; }
+    if (isKnownPickup(saved)) { fLocation.value = saved; locationHint.hidden = false; }
   }
   const savedExpiry = getSavedExpiry();
   if (savedExpiry) fExpiry.value = savedExpiry;
@@ -787,7 +916,7 @@ postingToChange.addEventListener("click", () => {
 document.getElementById("fContact").addEventListener("input", () => {
   document.getElementById("contactHint").hidden = true;
 });
-document.getElementById("fLocation").addEventListener("input", () => {
+document.getElementById("fLocation").addEventListener("change", () => {
   document.getElementById("locationHint").hidden = true;
 });
 closePostModalBtn.addEventListener("click", closePostModal);
@@ -846,7 +975,7 @@ qpSubmit.addEventListener("click", async () => {
   }
   const savedContact = normalizePhone(getSavedContact());
   if (!savedContact) {
-    toast("Add your mobile number first — tap \"Post an order\"");
+    toast("Add your mobile number first. Tap \"Post an order\"");
     return;
   }
 
@@ -855,32 +984,30 @@ qpSubmit.addEventListener("click", async () => {
   if (appNeedsOutlet(appVal)) {
     outlet = qpOutlet.value === OUTLET_OTHER ? "" : qpOutlet.value;
     if (!outlet) {
-      toast("Pick an outlet — tap \"Post an order\" to type a new one");
+      toast("Pick an outlet, or tap \"Post an order\" to type a new one");
       return;
     }
   }
 
-  const minutes = Number(qpExpiry.value);
   const payload = {
     app: appVal,
     outlet,
     current,
     target,
-    items: "",
     location: getSavedLocation(),
     contact: savedContact,
     posterId: myId,
     posterName: getMyName(),
     posterEmail: myEmail,
     createdAt: serverTimestamp(),
-    expiresAt: Date.now() + minutes * 60 * 1000
+    expiresAt: expiryToTimestamp(qpExpiry.value)
   };
 
   // Not awaited — see the note in the post form handler. The write lands in
   // Firestore's local cache instantly and syncs on its own.
   addDoc(collection(db, ORDERS_COL), payload).catch((err) => {
     console.error("[orderup] quick post failed:", err);
-    toast("Couldn't post — check your connection");
+    toast("Couldn't post. Check your connection");
   });
 
   saveExpiry(qpExpiry.value);
@@ -913,7 +1040,7 @@ postForm.addEventListener("submit", async (e) => {
   const currentInput = document.getElementById("fCurrent");
   const current = Number(currentInput.value);
   if (!current || current <= 0) {
-    showFieldError(currentInput, "Enter your cart value — it's what finds your matches");
+    showFieldError(currentInput, "Enter your cart value. It's what finds your matches");
     return;
   }
 
@@ -929,11 +1056,11 @@ postForm.addEventListener("submit", async (e) => {
 
   const locationInput = document.getElementById("fLocation");
   if (!locationInput.value.trim()) {
-    showFieldError(locationInput, "Where should they meet you?");
+    showFieldError(locationInput, "Pick a drop location");
     return;
   }
 
-  const minutes = Number(document.getElementById("fExpiry").value);
+  const expiresAt = expiryToTimestamp(document.getElementById("fExpiry").value);
 
   const contactInput = document.getElementById("fContact");
   const contact = normalizePhone(contactInput.value);
@@ -955,7 +1082,7 @@ postForm.addEventListener("submit", async (e) => {
     posterId: myId,
     posterName: getMyName(),
     posterEmail: myEmail,
-    expiresAt: Date.now() + minutes * 60 * 1000
+    expiresAt
   };
 
   const isEdit = !!editingOrderId;
@@ -976,7 +1103,7 @@ postForm.addEventListener("submit", async (e) => {
 
     write.catch((err) => {
       console.error("[orderup] save failed:", err);
-      toast("Couldn't save — check your connection");
+      toast("Couldn't save. Check your connection");
     });
 
     saveContact(contact);
@@ -994,7 +1121,7 @@ postForm.addEventListener("submit", async (e) => {
     showMatchesFor(payload);
   } catch (err) {
     console.error(err);
-    toast("Couldn't post — check your Firebase setup");
+    toast("Couldn't post. Check your Firebase setup");
   }
 });
 
@@ -1010,7 +1137,7 @@ function showMatchesFor(order) {
 
   if (!matches.length) {
     matchIntro.textContent =
-      `Posted to ${where}. Nobody matches your ₹${order.current} cart yet — you'll show up on their board, ` +
+      `Posted to ${where}. Nobody matches your ₹${order.current} cart yet, but you'll show up on their board, ` +
       `so sit tight or check back in a few minutes.`;
     matchList.innerHTML = `<p class="match-empty">No matches right now.</p>`;
   } else {
@@ -1018,7 +1145,7 @@ function showMatchesFor(order) {
     matchIntro.textContent =
       `Posted to ${where}. ${matches.length} ${matches.length === 1 ? "person" : "people"} ` +
       `can club with your ₹${order.current} cart` +
-      (mutual ? ` — ${mutual} where you both cross the line.` : ".");
+      (mutual ? `, ${mutual} where you both cross the line.` : ".");
     matchList.innerHTML = matches.map(m => matchRowHTML(m, order)).join("");
     wireMatchRows(matchList, matches);
   }
@@ -1156,6 +1283,8 @@ window.addEventListener("online", () => resumeLiveUpdates("network came back"));
 function timeLeftLabel(expiresAt) {
   const ms = expiresAt - Date.now();
   if (ms <= 0) return { label: "closed", urgent: true };
+  // "till midnight" reads better than a 13-hour countdown.
+  if (isAllDay(expiresAt)) return { label: "till midnight", urgent: false };
   const mins = Math.ceil(ms / 60000);
   if (mins < 60) return { label: `${mins}m left`, urgent: mins <= 10 };
   const hrs = Math.floor(mins / 60);
@@ -1208,7 +1337,7 @@ function cardInnerHTML(o, myValue, pool) {
              <button class="btn-ghost" data-extend="${o.id}">+15 min</button>
              <button class="btn-ghost" data-share="${o.id}">Share</button>
              <button class="btn-ghost btn-danger" data-remove="${o.id}">Remove</button>`
-      : `<button class="btn-ghost" data-join="${o.id}">I'm in — show contact</button>
+      : `<button class="btn-ghost" data-join="${o.id}">I'm in (show contact)</button>
              <button class="btn-ghost" data-share="${o.id}">Share</button>`
     }
         </div>
@@ -1266,7 +1395,7 @@ function wireCardEvents(el, o, pool) {
   const removeBtn = el.querySelector("[data-remove]");
   if (removeBtn) {
     removeBtn.addEventListener("click", () => {
-      deleteDoc(doc(db, ORDERS_COL, o.id)).catch(() => toast("Couldn't remove — try again"));
+      deleteDoc(doc(db, ORDERS_COL, o.id)).catch(() => toast("Couldn't remove. Try again"));
     });
   }
 
@@ -1289,7 +1418,7 @@ function wireCardEvents(el, o, pool) {
       const base = Math.max(Number(o.expiresAt) || 0, Date.now());
       const next = base + EXTEND_BY_MS;
       if (next - Date.now() > MAX_REMAINING_MS) {
-        toast("Can't extend beyond 3 hours out");
+        toast("Can't extend beyond 24 hours out");
         return;
       }
       // Not awaited — the local cache updates immediately and the board
@@ -1297,7 +1426,7 @@ function wireCardEvents(el, o, pool) {
       // disabled for however long the phone's connection takes.
       updateDoc(doc(db, ORDERS_COL, o.id), { expiresAt: next }).catch((err) => {
         console.error("[orderup] extend failed:", err);
-        toast("Couldn't extend — check your connection");
+        toast("Couldn't extend. Check your connection");
       });
       toast("Extended by 15 min ⏱");
     });
@@ -1332,6 +1461,7 @@ function render() {
   const q = sQuery.value.trim().toLowerCase();
 
   searchBar.classList.toggle("has-query", q.length > 0);
+  syncFilterDot();
 
   if (q) {
     visible = visible.filter(o =>
@@ -1343,6 +1473,12 @@ function render() {
   }
   if (maxTimeMin > 0) {
     visible = visible.filter(o => (o.expiresAt - now) <= maxTimeMin * 60000);
+  }
+  // Exact match on the canonical drop point. Orders posted before pickup
+  // points existed carry free text and simply won't match, which is correct:
+  // we can't know where "Block C, Room 214" hands over.
+  if (sLocation.value) {
+    visible = visible.filter(o => o.location === sLocation.value);
   }
 
   // ---- sort ----
@@ -1455,7 +1591,7 @@ function extractWhatsAppDigits(contact) {
 
 function buildWhatsAppLink(digits, o) {
   const where = o.outlet ? `${o.app} (${o.outlet})` : o.app;
-  const msg = `Hey! Saw your OrderUp post for ${where} — ₹${o.target} more needed. I'm in, let's club the order!`;
+  const msg = `Hey! Saw your OrderUp post for ${where}. ₹${o.target} more needed. I'm in, let's club the order!`;
   return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -1470,6 +1606,8 @@ setInterval(render, 30000);
 
 /* ---------------- init ---------------- */
 paintAppIcons();   // upgrade the filter bubbles' letter fallbacks to real logos
+populatePickupSelect(document.getElementById("fLocation"));
+populatePickupSelect(sLocation, "any location");
 
 if (filterStrip) {
   filterStrip.addEventListener("scroll", syncFilterStripFade, { passive: true });

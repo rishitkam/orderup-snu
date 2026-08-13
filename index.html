@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>OrderUp — club your order, split the delivery</title>
+  <title>OrderUp: club your order, split the delivery</title>
   <meta name="description"
     content="Club your Blinkit, Zomato or Swiggy order with someone on campus. Hit the free-delivery minimum and unlock large-order promos together." />
   <meta name="theme-color" id="themeColor" content="#EAF2EC" />
@@ -100,7 +100,7 @@
 
       <section class="hero">
         <p class="eyebrow">Club your delivery carts!</p>
-        <h1 class="hero-title">Nobody should pay<br /><em>₹40 delivery</em> alone.</h1>
+        <h1 class="hero-title">Nobody should pay<br /><em>delivery</em> alone.</h1>
       </section>
 
       <!-- APP FILTER BUBBLES -->
@@ -124,14 +124,59 @@
         </div>
       </section>
 
-      <!-- SEARCH -->
-      <section class="search-bar" id="searchBar">
-        <div class="search-main">
+      <section class="quick-post" id="quickPost" hidden>
+        <div class="quick-post-row">
+          <span class="quick-post-label">⚡ Quick post</span>
+          <select id="qpOutlet" aria-label="Outlet" hidden></select>
+          <div class="quick-post-amount">
+            <span>₹</span>
+            <input type="number" id="qpCurrent" min="0" step="1" placeholder="cart" aria-label="Your cart value" />
+          </div>
+          <div class="quick-post-amount">
+            <span>+₹</span>
+            <input type="number" id="qpTarget" min="1" step="1" placeholder="needed" aria-label="Amount still needed" />
+          </div>
+          <select id="qpExpiry" aria-label="Closes in">
+            <option value="15">15 min</option>
+            <option value="30">30 min</option>
+            <option value="60">1 hr</option>
+            <option value="120">2 hrs</option>
+            <option value="day">midnight</option>
+          </select>
+          <button type="button" class="btn btn-primary" id="qpSubmit">Post</button>
+        </div>
+        <p class="quick-post-note" id="quickPostNote"></p>
+      </section>
+
+      <section class="board-controls">
+        <p class="board-heading" id="boardHeading"></p>
+        <div class="board-tools">
+          <button type="button" class="icon-btn" id="searchToggle" aria-label="Search" aria-expanded="false"></button>
+          <button type="button" class="icon-btn" id="filterToggle" aria-label="Filters" aria-expanded="false">
+            <span class="tool-dot" id="filterDot" hidden></span>
+          </button>
+          <button class="btn btn-primary" id="openPostModal">
+            <span>+ Post<span class="btn-long"> an order</span></span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Both collapsed by default. Shown all the time they crowded out the
+           board, which is the thing people actually came for. -->
+      <section class="tool-panel" id="searchPanel" hidden>
+        <div class="search-main" id="searchBar">
           <span class="search-icon" aria-hidden="true">🔍</span>
           <input type="search" id="sQuery" autocomplete="off" placeholder="Search outlets or items…"
             aria-label="Search outlets or items" />
           <button type="button" class="search-clear" id="clearSearch" title="Clear search">×</button>
         </div>
+      </section>
+
+      <section class="tool-panel" id="filterPanel" hidden>
+        <label class="field filter-location">
+          <span class="field-label">Drop location</span>
+          <select id="sLocation"></select>
+        </label>
         <div class="search-filters">
           <label class="field">
             <span class="field-label">Your cart ₹</span>
@@ -156,36 +201,7 @@
           </label>
         </div>
         <p class="search-hint" id="searchHint"></p>
-      </section>
-
-      <section class="quick-post" id="quickPost" hidden>
-        <div class="quick-post-row">
-          <span class="quick-post-label">⚡ Quick post</span>
-          <select id="qpOutlet" aria-label="Outlet" hidden></select>
-          <div class="quick-post-amount">
-            <span>₹</span>
-            <input type="number" id="qpCurrent" min="0" step="1" placeholder="cart" aria-label="Your cart value" />
-          </div>
-          <div class="quick-post-amount">
-            <span>+₹</span>
-            <input type="number" id="qpTarget" min="1" step="1" placeholder="needed" aria-label="Amount still needed" />
-          </div>
-          <select id="qpExpiry" aria-label="Closes in">
-            <option value="15">15 min</option>
-            <option value="30">30 min</option>
-            <option value="60">1 hr</option>
-            <option value="120">2 hrs</option>
-          </select>
-          <button type="button" class="btn btn-primary" id="qpSubmit">Post</button>
-        </div>
-        <p class="quick-post-note" id="quickPostNote"></p>
-      </section>
-
-      <section class="board-controls">
-        <p class="board-heading" id="boardHeading"></p>
-        <button class="btn btn-primary" id="openPostModal">
-          <span>+ Post an order</span>
-        </button>
+        <button type="button" class="btn-ghost btn-block" id="clearFilters">Clear filters</button>
       </section>
 
       <section class="board" id="board">
@@ -193,7 +209,7 @@
       </section>
 
       <p class="empty-state" id="emptyState" hidden>
-        Nothing here right now. Be the first — post what you're ordering.
+        Nothing here right now. Be the first to post what you're ordering.
       </p>
 
     </main>
@@ -260,9 +276,9 @@
 
         <div class="field-row">
           <label class="field">
-            <span class="field-label">Where (hostel / block)</span>
-            <input type="text" id="fLocation" maxlength="60" placeholder="Block C, Room 214" required />
-            <span class="field-hint" id="locationHint" hidden>Remembered from last time — edit any time.</span>
+            <span class="field-label">Drop location</span>
+            <select id="fLocation" required></select>
+            <span class="field-hint" id="locationHint" hidden>Remembered from last time. Edit any time.</span>
           </label>
           <label class="field">
             <span class="field-label">Closes in</span>
@@ -271,6 +287,7 @@
               <option value="30" selected>30 min</option>
               <option value="60">1 hour</option>
               <option value="120">2 hours</option>
+              <option value="day">at midnight (all day)</option>
             </select>
           </label>
         </div>
@@ -279,8 +296,8 @@
           <span class="field-label">Your WhatsApp number</span>
           <input type="tel" id="fContact" inputmode="numeric" autocomplete="tel-national" maxlength="15"
             placeholder="9876543210" required />
-          <span class="field-hint">10-digit mobile number only — that's how people reach you.</span>
-          <span class="field-hint" id="contactHint" hidden>Remembered from last time — edit any time.</span>
+          <span class="field-hint">10-digit mobile number only. That's how people reach you.</span>
+          <span class="field-hint" id="contactHint" hidden>Remembered from last time. Edit any time.</span>
         </label>
 
         <button type="submit" class="btn btn-primary btn-block">Post to the board</button>
