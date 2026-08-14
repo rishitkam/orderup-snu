@@ -1,4 +1,4 @@
-const CACHE = "orderup-v32";
+const CACHE = "orderup-v33";
 const ASSETS = ["./", "index.html", "style.css", "app.js", "manifest.json"];
 
 self.addEventListener("install", (e) => {

@@ -161,6 +161,19 @@
         </div>
       </section>
 
+      <!-- Sort lives outside the filter panel: it's something you reach for
+           while browsing, not a filter you set once and forget. -->
+      <section class="sort-row">
+        <label class="sort-pill">
+          <span class="sort-pill-label">Sort</span>
+          <select id="sSort" aria-label="Sort orders">
+            <option value="match">best match</option>
+            <option value="soonest">closing soonest</option>
+            <option value="lowest">least ₹ needed</option>
+          </select>
+        </label>
+      </section>
+
       <!-- Both collapsed by default. Shown all the time they crowded out the
            board, which is the thing people actually came for. -->
       <section class="tool-panel" id="searchPanel" hidden>
@@ -189,14 +202,6 @@
               <option value="15">15 min</option>
               <option value="30">30 min</option>
               <option value="60">1 hr</option>
-            </select>
-          </label>
-          <label class="field">
-            <span class="field-label">Sort</span>
-            <select id="sSort">
-              <option value="match">match</option>
-              <option value="soonest">soonest</option>
-              <option value="lowest">least ₹</option>
             </select>
           </label>
         </div>

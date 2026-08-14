@@ -477,15 +477,16 @@ clearFiltersBtn.addEventListener("click", () => {
   sLocation.value = "";
   sMyValue.value = "";
   sMaxTime.value = "0";
-  sSort.value = "match";
   render();
 });
 
 // Dot on the filter icon whenever a filter is actually narrowing the board, so
 // a filtered view is never mistaken for the full one.
 function syncFilterDot() {
+  // Sort is deliberately excluded: it lives outside the panel now, and it
+  // reorders the board rather than hiding anything from it.
   const active = sLocation.value !== "" || sMyValue.value.trim() !== ""
-    || sMaxTime.value !== "0" || sSort.value !== "match";
+    || sMaxTime.value !== "0";
   filterDot.hidden = !active;
 }
 
