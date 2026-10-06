@@ -1,8 +1,10 @@
-const CACHE = "orderknot-v49";
+const CACHE = "orderknot-v50";
 const ASSETS = ["./", "index.html", "style.css", "app.js", "manifest.json", "logo.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+  // cache: "reload" — fill the cache from the network, never from the
+  // browser's HTTP cache, or a new service worker can install stale files.
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS.map(u => new Request(u, { cache: "reload" })))));
   self.skipWaiting();
 });
 
@@ -37,7 +39,11 @@ self.addEventListener("fetch", (e) => {
   if (url.origin !== self.location.origin) return; // let cross-origin requests (Firestore, fonts, etc.) pass through untouched
   if (url.pathname.startsWith("/__/")) return;     // let Firebase's auth handler through untouched
   e.respondWith(
-    fetch(e.request)
+    // cache: "no-store" — skip the browser's HTTP cache. Without it, a file
+    // the browser cached before (back when Hosting allowed an hour of
+    // caching) is served stale even though this handler is "network-first",
+    // which kept phones on old sign-in code across several deploys.
+    fetch(e.request, { cache: "no-store" })
       .then(resp => {
         const copy = resp.clone();
         caches.open(CACHE).then(c => c.put(e.request, copy));
