@@ -6,6 +6,26 @@
       "**/.*",
       "**/node_modules/**",
       "things/**"
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(js|html|json)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
     ]
   },
   "firestore": {
