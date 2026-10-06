@@ -1,5 +1,5 @@
-const CACHE = "orderup-v33";
-const ASSETS = ["./", "index.html", "style.css", "app.js", "manifest.json"];
+const CACHE = "orderknot-v46";
+const ASSETS = ["./", "index.html", "style.css", "app.js", "manifest.json", "logo.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));

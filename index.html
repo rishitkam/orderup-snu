@@ -4,49 +4,53 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>OrderUp: club your order, split the delivery</title>
+  <title>OrderKnot: club your order, split the delivery</title>
   <meta name="description"
     content="Club your Blinkit, Zomato or Swiggy order with someone on campus. Hit the free-delivery minimum and unlock large-order promos together." />
-  <meta name="theme-color" id="themeColor" content="#EAF2EC" />
+  <meta name="theme-color" id="themeColor" content="#f5f5f7" />
 
   <!-- Runs before first paint deliberately: applying the stored theme from
        app.js instead would show a flash of the wrong background on every load. -->
   <script>
     (function () {
       var stored = null;
-      try { stored = localStorage.getItem("orderup_theme"); } catch (e) { }
+      try { stored = localStorage.getItem("orderknot_theme"); } catch (e) { }
       if (stored === "dark" || stored === "light") document.documentElement.dataset.theme = stored;
       var dark = stored
         ? stored === "dark"
         : !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
       var m = document.getElementById("themeColor");
-      if (m) m.setAttribute("content", dark ? "#0F1A17" : "#EAF2EC");
+      if (m) m.setAttribute("content", dark ? "#000000" : "#f5f5f7");
     })();
   </script>
 
   <link rel="manifest" href="manifest.json" />
-  <link rel="icon"
-    href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2245%22 fill=%22%23FF6B4A%22/></svg>" />
+  <link rel="icon" href="logo.png" />
+  <link rel="apple-touch-icon" href="icon-512.png" />
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,500&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap"
-    rel="stylesheet">
-
+  <!-- System font stack only: no web fonts to load, nothing to flash-of-
+       unstyled-text while it fetches. -->
   <link rel="stylesheet" href="style.css" />
 </head>
 
 <body>
 
-  <div class="grain"></div>
+  <!-- Ambient background: two large, heavily blurred colour fields drifting
+       very slowly behind everything. Purely decorative (aria-hidden, no
+       pointer events) — see the .ambient rules in style.css for why this is
+       safe against every card and every contrast check already done. -->
+  <div class="ambient" aria-hidden="true">
+    <span class="orb orb-a"></span>
+    <span class="orb orb-b"></span>
+    <span class="orb orb-c"></span>
+  </div>
 
   <!-- LOGIN GATE -->
   <div class="login-gate" id="loginGate">
     <div class="login-card">
       <div class="brand login-brand">
-        <span class="brand-mark">◐</span>
-        <span class="brand-name">OrderUp</span>
+        <img class="brand-mark" src="logo.png" alt="" />
+        <span class="brand-name">OrderKnot</span>
       </div>
       <h1 class="login-title">SNU students only</h1>
       <p class="login-sub" id="loginSub">Sign in with your @snu.edu.in Google account to see and post orders.</p>
@@ -67,6 +71,14 @@
 
       <p class="login-note" id="loginNote"></p>
 
+      <!-- Shown only inside in-app browsers (Instagram/WhatsApp/etc.), where
+           Google sign-in cannot work. Tells the user to open in the real
+           browser and gives them a one-tap way to copy the link. -->
+      <div class="login-inapp" id="loginInApp" hidden>
+        <p class="login-inapp-msg" id="loginInAppMsg"></p>
+        <button type="button" class="btn-copy" id="copyLinkBtn">Copy link</button>
+      </div>
+
       <!-- Shown only when a sign-in attempt comes back empty. Gives whoever
            hit the problem something concrete to screenshot. -->
       <details class="login-diag" id="loginDiag" hidden>
@@ -82,13 +94,13 @@
     <header class="topbar">
       <div class="wrap topbar-inner">
         <a class="brand" href="#">
-          <span class="brand-mark">◐</span>
-          <span class="brand-name">OrderUp</span>
+          <img class="brand-mark" src="logo.png" alt="" />
+        <span class="brand-name">OrderKnot</span>
         </a>
         <div class="whoami" id="whoami">
           <span class="whoami-email" id="whoamiEmail"></span>
           <button class="icon-btn" id="themeToggle" type="button" aria-label="Switch to dark mode">
-            <span id="themeToggleIcon" aria-hidden="true">☾</span>
+            <span id="themeToggleIcon" aria-hidden="true"></span>
           </button>
           <button class="whoami-name" id="signOutBtn">sign out</button>
         </div>
@@ -99,8 +111,8 @@
     <main class="wrap">
 
       <section class="hero">
-        <p class="eyebrow">Club your delivery carts!</p>
-        <h1 class="hero-title">Nobody should pay<br /><em>delivery</em> alone.</h1>
+        <p class="eyebrow">Club your delivery carts</p>
+        <h1 class="hero-title">Nobody should pay<br /><span class="hero-accent">delivery</span> alone.</h1>
       </section>
 
       <!-- APP FILTER BUBBLES -->
@@ -119,33 +131,9 @@
             <span class="app-dot" data-app="Swiggy" aria-hidden="true">s</span><span>Swiggy</span>
           </button>
           <button class="filter-tab filter-tab-mine" data-filter="mine" role="tab">
-            <span class="app-dot app-dot-mine" aria-hidden="true">★</span><span>Mine</span>
+            <span>Mine</span>
           </button>
         </div>
-      </section>
-
-      <section class="quick-post" id="quickPost" hidden>
-        <div class="quick-post-row">
-          <span class="quick-post-label">⚡ Quick post</span>
-          <select id="qpOutlet" aria-label="Outlet" hidden></select>
-          <div class="quick-post-amount">
-            <span>₹</span>
-            <input type="number" id="qpCurrent" min="0" step="1" placeholder="cart" aria-label="Your cart value" />
-          </div>
-          <div class="quick-post-amount">
-            <span>+₹</span>
-            <input type="number" id="qpTarget" min="1" step="1" placeholder="needed" aria-label="Amount still needed" />
-          </div>
-          <select id="qpExpiry" aria-label="Closes in">
-            <option value="15">15 min</option>
-            <option value="30">30 min</option>
-            <option value="60">1 hr</option>
-            <option value="120">2 hrs</option>
-            <option value="day">midnight</option>
-          </select>
-          <button type="button" class="btn btn-primary" id="qpSubmit">Post</button>
-        </div>
-        <p class="quick-post-note" id="quickPostNote"></p>
       </section>
 
       <section class="board-controls">
@@ -175,38 +163,54 @@
       </section>
 
       <!-- Both collapsed by default. Shown all the time they crowded out the
-           board, which is the thing people actually came for. -->
-      <section class="tool-panel" id="searchPanel" hidden>
-        <div class="search-main" id="searchBar">
-          <span class="search-icon" aria-hidden="true">🔍</span>
-          <input type="search" id="sQuery" autocomplete="off" placeholder="Search outlets or items…"
-            aria-label="Search outlets or items" />
-          <button type="button" class="search-clear" id="clearSearch" title="Clear search">×</button>
+           board, which is the thing people actually came for.
+
+           No `hidden` attribute here — [hidden] means display:none, and a
+           display swap can't be animated. Openness is the .open class alone,
+           driven by a grid-template-rows 0fr/1fr collapse in style.css, and
+           `inert` keeps a collapsed panel's inputs out of tab order and out
+           of reach of anything that would otherwise still find them at
+           zero height. -->
+      <section class="tool-panel" id="searchPanel" inert>
+        <div class="tool-panel-inner">
+          <div class="search-main" id="searchBar">
+            <span class="search-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="17" height="17" focusable="false">
+                <circle cx="10.5" cy="10.5" r="6.4" fill="none" stroke="currentColor" stroke-width="2" />
+                <path d="M15.4 15.4 21 21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              </svg>
+            </span>
+            <input type="search" id="sQuery" autocomplete="off" placeholder="Search outlets or items…"
+              aria-label="Search outlets or items" />
+            <button type="button" class="search-clear" id="clearSearch" title="Clear search">×</button>
+          </div>
         </div>
       </section>
 
-      <section class="tool-panel" id="filterPanel" hidden>
-        <label class="field filter-location">
-          <span class="field-label">Drop location</span>
-          <select id="sLocation"></select>
-        </label>
-        <div class="search-filters">
-          <label class="field">
-            <span class="field-label">Your cart ₹</span>
-            <input type="number" id="sMyValue" min="0" step="1" placeholder="250" />
+      <section class="tool-panel" id="filterPanel" inert>
+        <div class="tool-panel-inner">
+          <label class="field filter-location">
+            <span class="field-label">Drop location</span>
+            <select id="sLocation"></select>
           </label>
-          <label class="field">
-            <span class="field-label">Within</span>
-            <select id="sMaxTime">
-              <option value="0">any time</option>
-              <option value="15">15 min</option>
-              <option value="30">30 min</option>
-              <option value="60">1 hr</option>
-            </select>
-          </label>
+          <div class="search-filters">
+            <label class="field">
+              <span class="field-label">Your cart ₹</span>
+              <input type="number" id="sMyValue" min="0" step="1" placeholder="250" />
+            </label>
+            <label class="field">
+              <span class="field-label">Within</span>
+              <select id="sMaxTime">
+                <option value="0">any time</option>
+                <option value="15">15 min</option>
+                <option value="30">30 min</option>
+                <option value="60">1 hr</option>
+              </select>
+            </label>
+          </div>
+          <p class="search-hint" id="searchHint"></p>
+          <button type="button" class="btn-ghost btn-block" id="clearFilters">Clear filters</button>
         </div>
-        <p class="search-hint" id="searchHint"></p>
-        <button type="button" class="btn-ghost btn-block" id="clearFilters">Clear filters</button>
       </section>
 
       <section class="board" id="board">
@@ -264,6 +268,10 @@
           <span class="field-label">Outlet / restaurant</span>
           <select id="fOutlet"></select>
           <input type="text" id="fOutletOther" maxlength="60" placeholder="Type the outlet name" hidden />
+          <div class="outlet-suggest" id="outletSuggest" hidden>
+            <span id="outletSuggestText"></span>
+            <button type="button" id="outletSuggestUse">Use this outlet</button>
+          </div>
           <span class="field-hint">Only people ordering from the same outlet can club with you.</span>
         </label>
 

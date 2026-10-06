@@ -1,9 +1,9 @@
 import {
-  db, auth, googleProvider, ALLOWED_DOMAIN, persistenceState, persistenceReady
+  db, auth, googleProvider, ALLOWED_DOMAIN, persistenceState
 } from "./firebase-config.js";
 import {
   collection, addDoc, onSnapshot, deleteDoc, doc, setDoc, updateDoc,
-  serverTimestamp, query, orderBy
+  serverTimestamp, query, orderBy, limit
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   signInWithPopup, signInWithRedirect, getRedirectResult,
@@ -44,6 +44,24 @@ function isAllDay(expiresAt) {
   return d.getHours() === 23 && d.getMinutes() === 59;
 }
 const IS_MOBILE = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+
+// In-app browsers (the webview inside Instagram, Facebook, WhatsApp, Gmail,
+// Snapchat, LinkedIn, etc.) cannot complete a Google sign-in, and there is no
+// code fix for it: iOS webviews don't allow window.open (so the popup never
+// opens — "nothing happens"), and Google itself refuses OAuth inside embedded
+// webviews (disallowed_useragent) so the redirect fallback is dead too. The
+// only working path is the real browser, so we detect these UAs and route the
+// user out instead of letting them tap a button that can't succeed.
+const IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+function isInAppBrowser() {
+  const ua = navigator.userAgent || "";
+  // Facebook, Instagram, Line, Snapchat, LinkedIn, TikTok set explicit tokens.
+  if (/(FBAN|FBAV|Instagram|Line\/|Snapchat|LinkedInApp|Twitter|MicroMessenger|TikTok|GSA\/)/i.test(ua)) return true;
+  // Generic iOS webview: WebKit but neither "Safari" nor a known real browser
+  // (Chrome=CriOS, Firefox=FxiOS, Edge=EdgiOS). Real Safari always says "Safari".
+  if (IS_IOS && /AppleWebKit/i.test(ua) && !/Safari/i.test(ua) && !/(CriOS|FxiOS|EdgiOS)/i.test(ua)) return true;
+  return false;
+}
 
 /* ---------------- apps ----------------
    Three apps, deliberately. Blinkit is a single storefront so there's nothing
@@ -102,6 +120,12 @@ function populatePickupSelect(sel, placeholder) {
     + PICKUP_POINTS.map(p => `<option value="${escapeHtml(p.value)}">${escapeHtml(p.label)}</option>`).join("");
 }
 
+// A plain line-icon pin, replacing the pin emoji that used to sit in front of
+// the drop location on every card — same reasoning as the theme toggle icons.
+const ICON_PIN = `<svg viewBox="0 0 24 24" width="12" height="12" focusable="false" aria-hidden="true">
+  <path fill="currentColor" d="M12 2c-4 0-7 3-7 7 0 5.2 6 12.3 6.3 12.6a1 1 0 0 0 1.4 0C13 21.3 19 14.2 19 9c0-4-3-7-7-7zm0 9.6A2.6 2.6 0 1 1 12 6.4a2.6 2.6 0 0 1 0 5.2z"/>
+</svg>`;
+
 /* Brand marks, drawn as inline SVG so they work offline and inside the service
    worker cache — no external image requests. Each uses currentColor, so the
    colour comes from the .app-dot rule in style.css and stays correct on any
@@ -140,6 +164,65 @@ function outletKey(outlet) {
   return String(outlet || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+// Plain Levenshtein edit distance — the number of single-character inserts,
+// deletes or swaps to turn one string into the other.
+function editDistance(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const row = [i];
+    for (let j = 1; j <= n; j++) {
+      row[j] = a[i - 1] === b[j - 1]
+        ? prev[j - 1]
+        : 1 + Math.min(prev[j - 1], prev[j], row[j - 1]);
+    }
+    prev = row;
+  }
+  return prev[n];
+}
+
+// 1 = identical, 0 = nothing in common. "behrouz" vs "behrooz" lands around
+// 0.86 — a typo, not a different place — while "kfc" vs "bfc" (short strings,
+// one swap) lands at 0.67, which is exactly the case the length guard in
+// outletsSimilar() below exists to keep out: short names are one edit away
+// from a *different real brand* far more easily than long ones are.
+function outletSimilarity(a, b) {
+  const longer = Math.max(a.length, b.length);
+  if (!longer) return 1;
+  return 1 - editDistance(a, b) / longer;
+}
+
+// Same outlet if the normalized keys match exactly, one is a shortened form
+// of the other ("Behrouz" said instead of "Behrouz Biryani" — a name someone
+// typed short, not a typo), or they're close enough on a normalized
+// edit-distance ratio to absorb an actual typo like "Behrouz"/"Behrooz".
+// Short keys are excluded from the edit-distance leg: "KFC" vs "BFC" is one
+// swap apart but a completely different restaurant, and there isn't enough
+// string length left for a coincidence like that to show up as anything
+// other than "similar". The containment leg still applies at short lengths —
+// "KFC" said instead of "KFC Biryani" is a real shortening, not a coincidence.
+const OUTLET_FUZZY_THRESHOLD = 0.8;
+const OUTLET_FUZZY_MIN_LEN = 5;
+const OUTLET_PREFIX_MIN_LEN = 4;
+function outletsSimilar(a, b) {
+  const ka = outletKey(a), kb = outletKey(b);
+  if (!ka || !kb) return false;
+  if (ka === kb) return true;
+  const shorter = ka.length <= kb.length ? ka : kb;
+  const longerStr = ka.length <= kb.length ? kb : ka;
+  if (shorter.length >= OUTLET_PREFIX_MIN_LEN && longerStr.startsWith(shorter)) return true;
+  // Covers "Behrooz" (typo) said short for "Behrouz Biryani" (typo AND
+  // truncation at once) — compare the short form against a same-length
+  // window off the front of the long one, not the whole thing, so the extra
+  // trailing words don't drown out a close match at the start.
+  if (shorter.length >= OUTLET_FUZZY_MIN_LEN &&
+      outletSimilarity(shorter, longerStr.slice(0, shorter.length)) >= OUTLET_FUZZY_THRESHOLD) return true;
+  if (ka.length < OUTLET_FUZZY_MIN_LEN || kb.length < OUTLET_FUZZY_MIN_LEN) return false;
+  return outletSimilarity(ka, kb) >= OUTLET_FUZZY_THRESHOLD;
+}
+
 /* ---------------- identity: comes from a verified @{ALLOWED_DOMAIN} Google login ---------------- */
 let myId = null;
 let myEmail = null;
@@ -152,6 +235,9 @@ const googleSignInBtn = document.getElementById("googleSignInBtn");
 const loginNote = document.getElementById("loginNote");
 const loginDiag = document.getElementById("loginDiag");
 const loginDiagBody = document.getElementById("loginDiagBody");
+const loginInApp = document.getElementById("loginInApp");
+const loginInAppMsg = document.getElementById("loginInAppMsg");
+const copyLinkBtn = document.getElementById("copyLinkBtn");
 const whoamiEmail = document.getElementById("whoamiEmail");
 const signOutBtn = document.getElementById("signOutBtn");
 
@@ -160,12 +246,34 @@ function showLoginNote(msg, isError) {
   loginNote.classList.toggle("error", !!isError);
 }
 
+// If we're stuck inside an in-app browser, sign-in can't succeed here (see
+// isInAppBrowser). Disable the dead button and show how to escape to the real
+// browser instead of letting the user tap into a silent failure.
+if (isInAppBrowser()) {
+  googleSignInBtn.disabled = true;
+  loginInAppMsg.textContent = IS_IOS
+    ? "Open this page in Safari to sign in. Tap the ••• (or share) button at the bottom, then “Open in Safari”."
+    : "Open this page in Chrome to sign in. Tap the ⋮ menu, then “Open in browser”.";
+  loginInApp.hidden = false;
+  copyLinkBtn.addEventListener("click", async () => {
+    const url = location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+      copyLinkBtn.textContent = "Link copied ✓";
+    } catch {
+      // Clipboard API is often blocked in webviews too — fall back to a prompt
+      // the user can copy from manually.
+      window.prompt("Copy this link and open it in your browser:", url);
+    }
+  });
+}
+
 /* ---------------- sign-in diagnostics ----------------
    The failure mode we kept chasing is *silent*: getRedirectResult() resolves
    null rather than rejecting, so nothing throws and the login screen simply
    reappears. This records that a redirect was started, and if we come back
    with no user, says so on screen instead of pretending nothing happened. */
-const PENDING_REDIRECT_KEY = "orderup_redirect_started";
+const PENDING_REDIRECT_KEY = "orderknot_redirect_started";
 
 function markRedirectStarted() {
   try { localStorage.setItem(PENDING_REDIRECT_KEY, String(Date.now())); } catch { /* storage blocked */ }
@@ -182,8 +290,8 @@ function consumeRedirectStarted() {
 
 function storageProbe() {
   try {
-    localStorage.setItem("__orderup_probe", "1");
-    localStorage.removeItem("__orderup_probe");
+    localStorage.setItem("__orderknot_probe", "1");
+    localStorage.removeItem("__orderknot_probe");
     return "ok";
   } catch (err) {
     return "BLOCKED (" + (err && err.name ? err.name : "unknown") + ")";
@@ -196,7 +304,7 @@ function showDiag(reason) {
     "authDomain:  " + (auth.config && auth.config.authDomain),
     "page origin: " + location.origin,
     "same-origin: " + (auth.config && auth.config.authDomain === location.host ? "yes" : "NO <-- suspect"),
-    "flow:        popup-first" + (IS_MOBILE ? " (mobile UA)" : " (desktop UA)"),
+    "flow:        " + (IS_IOS ? "redirect (iOS)" : "popup-first") + (IS_MOBILE ? " (mobile UA)" : " (desktop UA)"),
     "standalone:  " + (window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true),
     "localStorage:" + storageProbe(),
     "persistence: " + (persistenceState.error ? persistenceState.error.code || String(persistenceState.error) : "ok"),
@@ -224,13 +332,31 @@ async function handleSignedInUser(user) {
   const email = (user.email || "").toLowerCase();
   if (!email.endsWith("@" + ALLOWED_DOMAIN)) {
     await signOut(auth);
-    showLoginNote(`Only @${ALLOWED_DOMAIN} accounts can use OrderUp. Try a different Google account.`, true);
+    showLoginNote(`Only @${ALLOWED_DOMAIN} accounts can use OrderKnot. Try a different Google account.`, true);
   }
   // otherwise onAuthStateChanged below flips the UI over automatically
 }
 
 googleSignInBtn.addEventListener("click", async () => {
   showLoginNote("Opening Google sign-in…", false);
+
+  // iPhone/iPad: go straight to redirect, never popup. iOS Safari opens the
+  // popup as a separate tab and Firebase frequently loses track of it, so the
+  // popup rejects with auth/popup-closed-by-user even though the user finished
+  // signing in — and that code is treated as "user cancelled" below, so the
+  // login screen just sat there with no error. Redirect is safe here only
+  // because authDomain is the serving origin (see firebase-config.js), so the
+  // credential handoff stays first-party and iOS doesn't partition it away.
+  if (IS_IOS) {
+    markRedirectStarted();
+    signInWithRedirect(auth, googleProvider).catch((err) => {
+      console.error(err);
+      showLoginNote("Couldn't start sign-in on this browser.", true);
+      showDiag((err && err.code) || String(err));
+    });
+    return;
+  }
+
   try {
     // Popup first, on every device — including mobile.
     //
@@ -241,16 +367,23 @@ googleSignInBtn.addEventListener("click", async () => {
     // login screen. A popup returns the credential over postMessage and never
     // depends on that handoff, which is why desktop Safari — the same WebKit
     // engine as the iPhone — has worked all along.
-    // Persistence is no longer awaited at module load (see firebase-config.js).
-    // Wait for it here instead, so the session still survives a page reload —
-    // this handler is already async, so it costs nothing.
-    await persistenceReady;
-    console.log("[orderup] calling signInWithPopup, authDomain =", auth.config && auth.config.authDomain);
+    //
+    // CRITICAL: nothing may be `await`ed before signInWithPopup. That call
+    // opens a window, and mobile browsers (iOS Safari AND Android Chrome) only
+    // permit window.open inside the SYNCHRONOUS run of the tap handler. Any
+    // await first — even on an already-resolved promise like persistenceReady —
+    // defers to a microtask, the tap's transient activation is gone, the popup
+    // is blocked, and Firebase throws auth/popup-blocked. On mobile that reads
+    // as "the Google window never opens." Desktop is lenient about this; mobile
+    // is not. So persistence is NOT awaited here — it was already kicked off at
+    // module load (firebase-config.js) and is applied to the session
+    // regardless, so a reload still restores the login.
+    console.log("[orderknot] calling signInWithPopup, authDomain =", auth.config && auth.config.authDomain);
     const result = await signInWithPopup(auth, googleProvider);
-    console.log("[orderup] popup RESOLVED for", result && result.user && result.user.email);
+    console.log("[orderknot] popup RESOLVED for", result && result.user && result.user.email);
     await handleSignedInUser(result.user);
   } catch (err) {
-    console.error("[orderup] popup REJECTED:", err && err.code, err);
+    console.error("[orderknot] popup REJECTED:", err && err.code, err);
 
     // User just closed it / double-tapped — not an error worth shouting about.
     if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
@@ -292,7 +425,7 @@ getRedirectResult(auth).then((result) => {
   // restored either. This is the silent bounce — say so rather than quietly
   // re-showing the login screen as if the user never tried.
   if (startedAt && !auth.currentUser) {
-    showLoginNote("Sign-in didn't complete. Tap below and send this to whoever runs OrderUp.", true);
+    showLoginNote("Sign-in didn't complete. Tap below and send this to whoever runs OrderKnot.", true);
     showDiag("returned from Google with no credential (getRedirectResult was empty)");
   }
 }).catch((err) => {
@@ -303,8 +436,8 @@ getRedirectResult(auth).then((result) => {
 });
 
 /* The auth observer is registered at the BOTTOM of this file, not here.
-   It reads currentFilter and calls applyFilterUI()/refreshQuickPostBar()/
-   startOrdersListener(), which touch `const`s declared much further down.
+   It reads currentFilter and calls applyFilterUI()/startOrdersListener(),
+   which touch `const`s declared much further down.
    Registering it up here meant the observer could run while those bindings
    were still in the temporal dead zone — and Firebase swallows exceptions
    thrown inside the observer, so the failure was completely silent: sign-in
@@ -314,7 +447,7 @@ function getMyName() { return myName || ""; }
 
 /* ---------------- remembered defaults ---------------- */
 function fieldKey(field) {
-  return `orderup_${field}_${(myEmail || "").toLowerCase()}`;
+  return `orderknot_${field}_${(myEmail || "").toLowerCase()}`;
 }
 function getSavedField(field) {
   if (!myEmail) return "";
@@ -345,16 +478,6 @@ const saveOutlet = (v) => saveField("outlet", v);
 const getSavedFilter = () => getSavedField("filter");
 const saveFilter = (v) => saveField("filter", v);
 
-function hasQuickPostDefaults() {
-  // A contact saved before numbers were required could be an Instagram handle
-  // or a room number. Treat those as "no default" so the user is sent through
-  // the full form once to supply a real number, rather than quick-posting
-  // something nobody can call.
-  // A location saved before pickup points existed is free text, so send them
-  // through the full form once to choose a real spot.
-  return !!(normalizePhone(getSavedContact()) && isKnownPickup(getSavedLocation()));
-}
-
 /* ---------------- matching ----------------
    A match is someone whose remaining need is already covered by my cart: they
    need ₹150 more, my cart is at ₹250, so clubbing pushes them over the line.
@@ -369,7 +492,7 @@ function canClub(mine, theirs) {
   if (mine.id && theirs.id && mine.id === theirs.id) return false;
   if (mine.posterId && mine.posterId === theirs.posterId) return false;
   if (mine.app !== theirs.app) return false;
-  if (appNeedsOutlet(mine.app) && outletKey(mine.outlet) !== outletKey(theirs.outlet)) return false;
+  if (appNeedsOutlet(mine.app) && !outletsSimilar(mine.outlet, theirs.outlet)) return false;
   return (Number(theirs.target) || 0) <= (Number(mine.current) || 0);
 }
 
@@ -461,15 +584,20 @@ searchToggle.insertAdjacentHTML("afterbegin", ICON_SEARCH);
 filterToggle.insertAdjacentHTML("afterbegin", ICON_FILTER);
 
 function togglePanel(panel, btn, open) {
-  const show = open === undefined ? panel.hidden : open;
-  panel.hidden = !show;
+  const show = open === undefined ? !panel.classList.contains("open") : open;
+  panel.classList.toggle("open", show);
+  // inert (not `hidden`) is what actually keeps a collapsed panel's inputs
+  // out of tab order — `hidden` would mean display:none, which can't
+  // transition, which is the whole reason this panel isn't using it.
+  if (show) panel.removeAttribute("inert");
+  else panel.setAttribute("inert", "");
   btn.setAttribute("aria-expanded", show ? "true" : "false");
   btn.classList.toggle("on", show);
 }
 
 searchToggle.addEventListener("click", () => {
   togglePanel(searchPanel, searchToggle);
-  if (!searchPanel.hidden) sQuery.focus();
+  if (searchPanel.classList.contains("open")) sQuery.focus();
 });
 filterToggle.addEventListener("click", () => togglePanel(filterPanel, filterToggle));
 
@@ -495,7 +623,7 @@ function syncFilterDot() {
    and wins until it's changed again. The initial application happens in an
    inline script in index.html, before first paint — this only handles the
    toggle and keeps the browser chrome colour in sync. */
-const THEME_KEY = "orderup_theme";
+const THEME_KEY = "orderknot_theme";
 const themeToggle = document.getElementById("themeToggle");
 const themeToggleIcon = document.getElementById("themeToggleIcon");
 const themeColorMeta = document.getElementById("themeColor");
@@ -509,13 +637,25 @@ function resolvedTheme() {
   if (explicit === "dark" || explicit === "light") return explicit;
   return darkQuery && darkQuery.matches ? "dark" : "light";
 }
+// Line-icon sun/moon rather than the emoji glyphs this used to hold — those
+// render as full-colour pictures on Android and inconsistently everywhere
+// else, which reads as decoration rather than as a control.
+const ICON_SUN = `<svg viewBox="0 0 24 24" width="15" height="15" focusable="false">
+  <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  <path stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+    d="M12 2.5v2.4M12 19.1v2.4M21.5 12h-2.4M4.9 12H2.5M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7M18.4 18.4l-1.7-1.7M7.3 7.3 5.6 5.6"/>
+</svg>`;
+const ICON_MOON = `<svg viewBox="0 0 24 24" width="15" height="15" focusable="false">
+  <path fill="currentColor" d="M20.3 14.6A8.6 8.6 0 1 1 9.4 3.7a7 7 0 0 0 10.9 10.9z"/>
+</svg>`;
+
 function applyTheme(theme) {
   if (theme) document.documentElement.dataset.theme = theme;
   else delete document.documentElement.dataset.theme;
 
   const dark = resolvedTheme() === "dark";
-  if (themeColorMeta) themeColorMeta.setAttribute("content", dark ? "#0F1A17" : "#EAF2EC");
-  if (themeToggleIcon) themeToggleIcon.textContent = dark ? "☀" : "☾";
+  if (themeColorMeta) themeColorMeta.setAttribute("content", dark ? "#000000" : "#f5f5f7");
+  if (themeToggleIcon) themeToggleIcon.innerHTML = dark ? ICON_SUN : ICON_MOON;
   if (themeToggle) {
     themeToggle.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
   }
@@ -562,12 +702,12 @@ async function shareOrder(o) {
 
   if (navigator.share) {
     try {
-      await navigator.share({ title: "OrderUp", text, url });
+      await navigator.share({ title: "OrderKnot", text, url });
       return;
     } catch (err) {
       // The user backing out of the sheet is not a failure worth reporting.
       if (err && err.name === "AbortError") return;
-      console.error("[orderup] share failed, falling back to clipboard:", err);
+      console.error("[orderknot] share failed, falling back to clipboard:", err);
     }
   }
 
@@ -584,7 +724,7 @@ async function shareOrder(o) {
    Captured once at load and stashed, because the journey from a shared link
    to the board can pass through the login gate. Kept in sessionStorage so it
    also survives the redirect sign-in fallback, which reloads the page. */
-const DEEP_LINK_KEY = "orderup_deeplink";
+const DEEP_LINK_KEY = "orderknot_deeplink";
 
 function readDeepLink() {
   let fromUrl = null;
@@ -653,12 +793,34 @@ if (visualVP) {
 }
 
 /* ---------------- toast ---------------- */
-function toast(msg) {
+function toast(msg, ms) {
   syncKeyboardInset(); // the keyboard may already be up when this fires
   toastEl.textContent = msg;
   toastEl.classList.add("show");
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => toastEl.classList.remove("show"), 2200);
+  toast._t = setTimeout(() => toastEl.classList.remove("show"), ms || 2200);
+}
+
+/* Turns a raw Firestore error into something a student can actually act on —
+   and, just as importantly, into something THEY can read back to whoever
+   maintains the app. "Check your connection" was the only message every
+   write failure ever showed, which meant a permission rule rejecting the
+   write looked identical to being offline. There was no way to tell the two
+   apart without opening devtools, which is exactly the trap the sign-in
+   diagnostic further up this file already exists to avoid. */
+function describeWriteError(err) {
+  const code = (err && err.code) || "";
+  const known = {
+    "permission-denied": "blocked by a database rule",
+    "unavailable": "no connection to the server",
+    "resource-exhausted": "the app has hit its daily limit",
+    "unauthenticated": "you're signed out — try signing in again",
+    "deadline-exceeded": "the request timed out",
+    "not-found": "that order no longer exists",
+    "cancelled": "the request was cancelled"
+  };
+  console.error("[orderknot] write failed:", code || err);
+  return known[code] || (code ? `error: ${code}` : "unknown error");
 }
 
 /* ---------------- inline field validation ---------------- */
@@ -722,8 +884,6 @@ function applyFilterUI() {
   // off-screen after a deep link switches it for you.
   ensureTabVisible(activeBtn);
   syncFilterStripFade();
-
-  refreshQuickPostBar();
 }
 
 // scrollIntoView({ inline: "nearest" }) is unreliable inside a padded
@@ -787,6 +947,7 @@ function populateOutletSelect(sel, selectedOutlet) {
 function syncOutletField(app, preferredOutlet) {
   const needs = appNeedsOutlet(app);
   outletField.hidden = !needs;
+  hideOutletSuggest();
   if (!needs) {
     fOutletOther.hidden = true;
     return;
@@ -798,7 +959,62 @@ function syncOutletField(app, preferredOutlet) {
 fOutlet.addEventListener("change", () => {
   const other = fOutlet.value === OUTLET_OTHER;
   fOutletOther.hidden = !other;
+  hideOutletSuggest();
   if (other) fOutletOther.focus();
+});
+
+/* Someone typing "Behrooz" into the free-text outlet field, while a
+   "Behrouz Biryani" order is already live, would otherwise never club with
+   it — canClub() compares outlet spellings, and outletsSimilar() is fuzzy
+   there too, but two near-miss spellings drift further apart every time
+   someone retypes instead of reusing the existing one. Nudging them toward
+   the name that's already on the board keeps everyone converging on one
+   spelling instead of accumulating near-duplicates. */
+const outletSuggest = document.getElementById("outletSuggest");
+const outletSuggestText = document.getElementById("outletSuggestText");
+const outletSuggestUse = document.getElementById("outletSuggestUse");
+let outletSuggestValue = "";
+
+function hideOutletSuggest() {
+  outletSuggest.hidden = true;
+  outletSuggestValue = "";
+}
+
+// The curated list, plus whatever outlets are actually live on the board
+// right now for the selected app — that's who a match would actually club
+// with, so it's more useful to suggest than the static list alone.
+function knownOutletNames() {
+  const fromOrders = latestOrders
+    .filter(o => o.app === fApp.value && o.outlet)
+    .map(o => o.outlet);
+  const seen = new Map();
+  [...POPULAR_OUTLETS, ...fromOrders].forEach((name) => {
+    const k = outletKey(name);
+    if (k && !seen.has(k)) seen.set(k, name);
+  });
+  return [...seen.values()];
+}
+
+function checkOutletSuggest() {
+  const typed = fOutletOther.value.trim();
+  if (typed.length < OUTLET_FUZZY_MIN_LEN) { hideOutletSuggest(); return; }
+  const typedKey = outletKey(typed);
+  const match = knownOutletNames().find((name) => outletKey(name) !== typedKey && outletsSimilar(typed, name));
+  if (!match) { hideOutletSuggest(); return; }
+  outletSuggestValue = match;
+  outletSuggestText.textContent = `Another order already names a similar outlet: "${match}". Did you mean that one?`;
+  outletSuggest.hidden = false;
+}
+
+fOutletOther.addEventListener("input", () => {
+  clearTimeout(fOutletOther._suggestTimer);
+  fOutletOther._suggestTimer = setTimeout(checkOutletSuggest, 350);
+});
+
+outletSuggestUse.addEventListener("click", () => {
+  fOutletOther.value = outletSuggestValue;
+  hideOutletSuggest();
+  fOutletOther.focus();
 });
 
 fApp.addEventListener("change", () => syncOutletField(fApp.value));
@@ -893,6 +1109,7 @@ function openPostModal(order) {
 function closePostModal() {
   closeModal(postModalBackdrop);
   editingOrderId = null;
+  hideOutletSuggest();
 }
 
 function showPostingToChip(app) {
@@ -929,100 +1146,6 @@ closeMatchModalBtn.addEventListener("click", () => closeModal(matchModalBackdrop
 dismissMatchesBtn.addEventListener("click", () => closeModal(matchModalBackdrop));
 matchModalBackdrop.addEventListener("click", (e) => {
   if (e.target === matchModalBackdrop) closeModal(matchModalBackdrop);
-});
-
-/* ---------------- quick post ---------------- */
-const quickPost = document.getElementById("quickPost");
-const qpOutlet = document.getElementById("qpOutlet");
-const qpCurrent = document.getElementById("qpCurrent");
-const qpTarget = document.getElementById("qpTarget");
-const qpExpiry = document.getElementById("qpExpiry");
-const qpSubmit = document.getElementById("qpSubmit");
-const quickPostNote = document.getElementById("quickPostNote");
-
-function refreshQuickPostBar() {
-  // Quick post is a shortcut for "same as last time, new amount". It only
-  // makes sense inside an app tab — under "Mine" there's no app to post to.
-  if (!hasQuickPostDefaults() || !isKnownApp(currentFilter)) {
-    quickPost.hidden = true;
-    return;
-  }
-  quickPost.hidden = false;
-
-  const needsOutlet = appNeedsOutlet(currentFilter);
-  qpOutlet.hidden = !needsOutlet;
-  if (needsOutlet) populateOutletSelect(qpOutlet, getSavedOutlet());
-
-  const savedExpiry = getSavedExpiry();
-  if (savedExpiry) qpExpiry.value = savedExpiry;
-
-  quickPostNote.textContent =
-    `Posts to ${currentFilter} · ${getSavedLocation()} · reachable at ${normalizePhone(getSavedContact())}. ` +
-    `Tap "Post an order" to change these.`;
-}
-
-qpSubmit.addEventListener("click", async () => {
-  const target = Number(qpTarget.value);
-  if (!target || target <= 0) {
-    toast("Enter how much ₹ is still needed");
-    qpTarget.focus();
-    return;
-  }
-  const current = Number(qpCurrent.value);
-  if (!current || current <= 0) {
-    toast("Enter your cart value so we can find matches");
-    qpCurrent.focus();
-    return;
-  }
-  const savedContact = normalizePhone(getSavedContact());
-  if (!savedContact) {
-    toast("Add your mobile number first. Tap \"Post an order\"");
-    return;
-  }
-
-  const appVal = currentFilter;
-  let outlet = "";
-  if (appNeedsOutlet(appVal)) {
-    outlet = qpOutlet.value === OUTLET_OTHER ? "" : qpOutlet.value;
-    if (!outlet) {
-      toast("Pick an outlet, or tap \"Post an order\" to type a new one");
-      return;
-    }
-  }
-
-  const payload = {
-    app: appVal,
-    outlet,
-    current,
-    target,
-    location: getSavedLocation(),
-    contact: savedContact,
-    posterId: myId,
-    posterName: getMyName(),
-    posterEmail: myEmail,
-    createdAt: serverTimestamp(),
-    expiresAt: expiryToTimestamp(qpExpiry.value)
-  };
-
-  // Not awaited — see the note in the post form handler. The write lands in
-  // Firestore's local cache instantly and syncs on its own.
-  addDoc(collection(db, ORDERS_COL), payload).catch((err) => {
-    console.error("[orderup] quick post failed:", err);
-    toast("Couldn't post. Check your connection");
-  });
-
-  saveExpiry(qpExpiry.value);
-  if (outlet) saveOutlet(outlet);
-  qpTarget.value = "";
-  qpCurrent.value = "";
-  toast("Posted to the board 🎉");
-  showMatchesFor(payload);
-});
-
-[qpTarget, qpCurrent].forEach(el => {
-  el.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); qpSubmit.click(); }
-  });
 });
 
 /* ---------------- post order ---------------- */
@@ -1066,7 +1189,9 @@ postForm.addEventListener("submit", async (e) => {
   const contactInput = document.getElementById("fContact");
   const contact = normalizePhone(contactInput.value);
   if (!contact) {
-    showFieldError(contactInput, "Enter a valid 10-digit mobile number");
+    // Covers both wrong-format and right-shape-but-fake (e.g. 9999999999):
+    // "real" reads correctly for the junk case, where "10-digit" wouldn't.
+    showFieldError(contactInput, "Enter a real 10-digit mobile number");
     return;
   }
 
@@ -1103,8 +1228,7 @@ postForm.addEventListener("submit", async (e) => {
       : addDoc(collection(db, ORDERS_COL), { ...payload, createdAt: serverTimestamp() });
 
     write.catch((err) => {
-      console.error("[orderup] save failed:", err);
-      toast("Couldn't save. Check your connection");
+      toast(`Couldn't save: ${describeWriteError(err)}`, 4000);
     });
 
     saveContact(contact);
@@ -1116,8 +1240,7 @@ postForm.addEventListener("submit", async (e) => {
     document.getElementById("contactHint").hidden = true;
     document.getElementById("locationHint").hidden = true;
     closePostModal();
-    toast(isEdit ? "Order updated ✓" : "Posted to the board 🎉");
-    refreshQuickPostBar();
+    toast(isEdit ? "Order updated" : "Posted to the board");
     // Editing can change your cart value, which changes who matches you.
     showMatchesFor(payload);
   } catch (err) {
@@ -1201,7 +1324,11 @@ let listenerRetry = 0;
 
 function startOrdersListener() {
   if (unsubscribeOrders) return; // already listening
-  const q = query(collection(db, ORDERS_COL), orderBy("createdAt", "desc"));
+  // limit() is a safety valve, not a feature: without it a flood of junk
+  // orders makes every client download the entire collection on every
+  // reconnect, which can exhaust the free daily read quota and take the
+  // board down for everyone.
+  const q = query(collection(db, ORDERS_COL), orderBy("createdAt", "desc"), limit(200));
 
   unsubscribeOrders = onSnapshot(q, (snap) => {
     listenerRetry = 0; // a delivered snapshot means the stream is healthy
@@ -1216,10 +1343,10 @@ function startOrdersListener() {
       maybeConsumeDeepLink();
       render();
     } catch (err) {
-      console.error("[orderup] render failed:", err);
+      console.error("[orderknot] render failed:", err);
     }
   }, (err) => {
-    console.error("[orderup] orders listener error:", err);
+    console.error("[orderknot] orders listener error:", err);
 
     // Drop the dead subscription so the next attempt opens a fresh stream.
     detachOrdersListener();
@@ -1228,7 +1355,7 @@ function startOrdersListener() {
     // Reconnect with backoff instead of leaving a permanently stale board.
     listenerRetry = Math.min(listenerRetry + 1, 6);
     const wait = Math.min(1000 * 2 ** (listenerRetry - 1), 30000);
-    console.log(`[orderup] reconnecting orders listener in ${wait}ms`);
+    console.log(`[orderknot] reconnecting orders listener in ${wait}ms`);
     setTimeout(() => { if (myId) startOrdersListener(); }, wait);
   });
 }
@@ -1257,7 +1384,7 @@ const STALE_AFTER_MS = 20000;
 
 function resumeLiveUpdates(reason) {
   if (!myId) return;
-  console.log("[orderup] resuming live updates:", reason);
+  console.log("[orderknot] resuming live updates:", reason);
   detachOrdersListener();
   startOrdersListener();
 }
@@ -1329,17 +1456,17 @@ function cardInnerHTML(o, myValue, pool) {
         </div>
         ${o.items ? `<p class="card-items">${escapeHtml(o.items)}</p>` : ""}
         <div class="card-meta">
-          <span class="card-loc">📍 ${escapeHtml(o.location)}</span>
+          <span class="card-loc">${ICON_PIN}${escapeHtml(o.location)}</span>
           <span class="card-poster">by <b>${escapeHtml(o.posterName || "someone")}</b></span>
         </div>
-        <div class="card-actions" style="margin-top:10px;">
+        <div class="card-actions">
           ${isMine
-      ? `<button class="btn-ghost" data-edit="${o.id}">Edit</button>
-             <button class="btn-ghost" data-extend="${o.id}">+15 min</button>
-             <button class="btn-ghost" data-share="${o.id}">Share</button>
-             <button class="btn-ghost btn-danger" data-remove="${o.id}">Remove</button>`
-      : `<button class="btn-ghost" data-join="${o.id}">I'm in (show contact)</button>
-             <button class="btn-ghost" data-share="${o.id}">Share</button>`
+      ? `<button class="btn-ghost" data-edit="${escapeHtml(o.id)}">Edit</button>
+             <button class="btn-ghost" data-extend="${escapeHtml(o.id)}">+15 min</button>
+             <button class="btn-ghost" data-share="${escapeHtml(o.id)}">Share</button>
+             <button class="btn-ghost btn-danger" data-remove="${escapeHtml(o.id)}">Remove</button>`
+      : `<button class="btn-ghost" data-join="${escapeHtml(o.id)}">I'm in (show contact)</button>
+             <button class="btn-ghost" data-share="${escapeHtml(o.id)}">Share</button>`
     }
         </div>
         <div class="contact-slot"></div>
@@ -1362,7 +1489,7 @@ async function recordJoin(o) {
       joinedAt: serverTimestamp()
     }, { merge: true });
   } catch (err) {
-    console.error("Couldn't record join (notification to poster may not fire):", err);
+    console.error("[orderknot] couldn't record join (notification to poster may not fire):", (err && err.code) || err);
   }
 }
 
@@ -1396,7 +1523,7 @@ function wireCardEvents(el, o, pool) {
   const removeBtn = el.querySelector("[data-remove]");
   if (removeBtn) {
     removeBtn.addEventListener("click", () => {
-      deleteDoc(doc(db, ORDERS_COL, o.id)).catch(() => toast("Couldn't remove. Try again"));
+      deleteDoc(doc(db, ORDERS_COL, o.id)).catch((err) => toast(`Couldn't remove: ${describeWriteError(err)}`, 4000));
     });
   }
 
@@ -1426,10 +1553,9 @@ function wireCardEvents(el, o, pool) {
       // re-renders from it; waiting on the server ack would leave the button
       // disabled for however long the phone's connection takes.
       updateDoc(doc(db, ORDERS_COL, o.id), { expiresAt: next }).catch((err) => {
-        console.error("[orderup] extend failed:", err);
-        toast("Couldn't extend. Check your connection");
+        toast(`Couldn't extend: ${describeWriteError(err)}`, 4000);
       });
-      toast("Extended by 15 min ⏱");
+      toast("Extended by 15 min");
     });
   }
   // only present on your own cards — see cardInnerHTML
@@ -1504,6 +1630,16 @@ function render() {
     searchHint.textContent = "";
   }
 
+  // ---- FLIP: capture where every current card sits BEFORE touching the DOM.
+  // Sorting or switching filters used to just teleport cards to their new
+  // slot — correct, but visually dead. Recording each one's rect here means
+  // that once the reorder below has happened, we can measure how far it
+  // actually moved and animate that distance instead. ----
+  const firstRects = new Map();
+  [...board.children].forEach(el => {
+    if (el.dataset.orderId) firstRects.set(el.dataset.orderId, el.getBoundingClientRect());
+  });
+
   // ---- keyed reconciliation: update/move existing cards in place,
   // only create+animate cards that are genuinely new. This is what
   // stops the whole board flashing on every snapshot / 30s tick. ----
@@ -1515,7 +1651,7 @@ function render() {
     const isGoodMatch = myValue !== null && (Number(o.target) || 0) <= myValue;
     const wantedClass = "card" + (isGoodMatch ? " matched" : "");
 
-    let el = board.querySelector(`[data-order-id="${o.id}"]`);
+    let el = board.querySelector(`[data-order-id="${CSS.escape(o.id)}"]`);
 
     if (el) {
       if (el.dataset.snapshot !== html) {
@@ -1556,10 +1692,36 @@ function render() {
     if (!stillPresent.has(el.dataset.orderId)) el.remove();
   });
 
+  // ---- FLIP, continued: invert + play. For every card that already existed
+  // and actually changed position, jump it back to where it used to be with
+  // no transition, then release it on the next frame — the browser animates
+  // the difference, so it reads as the card sliding to its new spot rather
+  // than reappearing there. Only `transform` is touched, so this is
+  // compositor work, not layout thrash; freshly-created cards are skipped,
+  // since .card-enter already gives them their own entrance. ----
+  board.querySelectorAll(".card:not(.card-enter)").forEach(el => {
+    const id = el.dataset.orderId;
+    const first = firstRects.get(id);
+    if (!first) return; // wasn't on the board a moment ago — nothing to animate from
+    const last = el.getBoundingClientRect();
+    const dx = first.left - last.left;
+    const dy = first.top - last.top;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return; // didn't move
+
+    el.style.transition = "none";
+    el.style.transform = `translate(${dx}px, ${dy}px)`;
+    el.getBoundingClientRect(); // force layout so the browser commits the starting position
+    requestAnimationFrame(() => {
+      el.style.transition = "transform 0.42s cubic-bezier(0.25, 0.1, 0.25, 1)";
+      el.style.transform = "";
+      el.addEventListener("transitionend", () => { el.style.transition = ""; }, { once: true });
+    });
+  });
+
   // Someone followed a shared link — take them to the card and mark it, so it
   // is obvious which of several orders they were sent to.
   if (highlightAfterRender) {
-    const el = board.querySelector(`[data-order-id="${highlightAfterRender}"]`);
+    const el = board.querySelector(`[data-order-id="${CSS.escape(highlightAfterRender)}"]`);
     highlightAfterRender = null;
     if (el) {
       el.classList.add("card-highlight");
@@ -1572,8 +1734,30 @@ function render() {
 /* Single source of truth for "is this a usable number?".
    Accepts what people actually type — "+91 98765 43210", "098765 43210",
    "98765-43210" — and reduces it to the bare 10 digits we store. Returns null
-   for anything that isn't a valid Indian mobile, which is what the form,
-   the quick-post bar, and the WhatsApp link all gate on. */
+   for anything that isn't a valid Indian mobile, which is what the form and
+   the WhatsApp link both gate on. */
+// Rejects numbers that are the right SHAPE but obviously not real — the lazy
+// fakes someone types to get past a required field (9999999999, 6767676767,
+// 9876543210). There's no math that proves an Indian mobile is real (they
+// carry no check digit, unlike cards/GST), and libphonenumber wouldn't catch
+// these either — they're valid, allocated-range numbers, just patterned. So
+// this is an explicit heuristic blocklist, not validation. It can in theory
+// reject a genuine number that happens to look this regular; that's a rare,
+// accepted trade for stopping the common junk.
+function isJunkNumber(ten) {
+  if (/^(\d)\1{9}$/.test(ten)) return true;      // all identical: 9999999999
+  if (/^(\d\d)\1{4}$/.test(ten)) return true;    // repeated 2-digit block: 6767676767
+  if (/^(\d{5})\1$/.test(ten)) return true;      // repeated 5-digit block: 9876598765
+  // strictly sequential run, each digit ±1 from the previous: 9876543210
+  let asc = true, desc = true;
+  for (let i = 1; i < ten.length; i++) {
+    const step = ten.charCodeAt(i) - ten.charCodeAt(i - 1);
+    if (step !== 1) asc = false;
+    if (step !== -1) desc = false;
+  }
+  return asc || desc;
+}
+
 function normalizePhone(raw) {
   const digits = String(raw || "").replace(/\D/g, "");
   let ten = digits;
@@ -1582,7 +1766,10 @@ function normalizePhone(raw) {
   else if (digits.length === 11 && digits.startsWith("0")) ten = digits.slice(1);
   // Indian mobile numbers are 10 digits starting 6-9. Landlines and short
   // codes won't work on WhatsApp, so they're rejected too.
-  return /^[6-9]\d{9}$/.test(ten) ? ten : null;
+  if (!/^[6-9]\d{9}$/.test(ten)) return null;
+  // Right shape, but a transparent fake — treat it as no number at all.
+  if (isJunkNumber(ten)) return null;
+  return ten;
 }
 
 function extractWhatsAppDigits(contact) {
@@ -1592,7 +1779,7 @@ function extractWhatsAppDigits(contact) {
 
 function buildWhatsAppLink(digits, o) {
   const where = o.outlet ? `${o.app} (${o.outlet})` : o.app;
-  const msg = `Hey! Saw your OrderUp post for ${where}. ₹${o.target} more needed. I'm in, let's club the order!`;
+  const msg = `Hey! Saw your OrderKnot post for ${where}. ₹${o.target} more needed. I'm in, let's club the order!`;
   return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -1620,13 +1807,13 @@ if (filterStrip) {
 
 /* ---------------- auth observer ----------------
    Registered LAST, deliberately. Everything below the sign-in handler —
-   currentFilter, the DOM refs, applyFilterUI, refreshQuickPostBar,
-   startOrdersListener — has to be initialized before this can fire, or the
-   callback hits the temporal dead zone. Firebase swallows whatever the
-   observer throws, so getting this order wrong fails silently. */
-console.log("[orderup] module loaded, registering auth observer");
+   currentFilter, the DOM refs, applyFilterUI, startOrdersListener — has to be
+   initialized before this can fire, or the callback hits the temporal dead
+   zone. Firebase swallows whatever the observer throws, so getting this
+   order wrong fails silently. */
+console.log("[orderknot] module loaded, registering auth observer");
 onAuthStateChanged(auth, (user) => {
-  console.log("[orderup] auth state changed:", user ? user.email : "null");
+  console.log("[orderknot] auth state changed:", user ? user.email : "null");
   try {
     if (user && user.email && user.email.toLowerCase().endsWith("@" + ALLOWED_DOMAIN)) {
       myId = user.uid;
@@ -1643,13 +1830,12 @@ onAuthStateChanged(auth, (user) => {
       // to a single app that may well be empty.
       currentFilter = isValidFilter(getSavedFilter()) ? getSavedFilter() : FILTER_ALL;
       applyFilterUI();
-      refreshQuickPostBar();
       startOrdersListener(); // only read once we have a valid, verified auth token
     } else {
       if (user) {
         // signed in but wrong domain — kick them out
         signOut(auth);
-        showLoginNote(`Only @${ALLOWED_DOMAIN} accounts can use OrderUp.`, true);
+        showLoginNote(`Only @${ALLOWED_DOMAIN} accounts can use OrderKnot.`, true);
       }
       myId = null;
       myEmail = null;

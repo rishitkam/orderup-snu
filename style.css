@@ -1,36 +1,57 @@
 :root {
-  --ink: #1B2A2F;
-  --ink-soft: #3E524F;
-  --bg: #EAF2EC;
-  --surface: #FFFFFF;
-  --accent: #FF6B4A;
-  --accent-ink: #7A2A15;
-  --accent2: #2F6F5E;
-  --muted: #6B7C78;
-  --line: #D6E2DA;
-  --shadow: 0 1px 2px rgba(27,42,47,0.06), 0 8px 24px -12px rgba(27,42,47,0.18);
+  /* One accent, one job each. The old palette ran a coral accent against a
+     teal secondary against a cream background — three competing hues doing
+     the work one considered accent color does better. */
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --ink: #1d1d1f;
+  --ink-soft: #686868;
+  --muted: #767676;
+  --line: rgba(0, 0, 0, 0.09);
+  --accent: #0071e3;
+  --accent-hover: #0068d1;
+  /* A step darker than --accent: text and small badges need more contrast
+     than a button fill or a focus ring does, so this is deliberately not
+     the same value as --accent even though both read as "the blue". */
+  --accent-ink: #0066cc;
+  --accent-fill: #0071e3;
 
-  /* Everything below used to be hardcoded in individual rules, which made a
-     dark theme impossible. One definition per concept, overridden once. */
-  --tint: #F3F8F5;              /* soft inset panels: amounts, match rows */
-  --badge-bg: #E7F3EE;          /* "fits your cart" pill */
-  --code-bg: rgba(0, 0, 0, 0.04);
-  --topbar-bg: rgba(234, 242, 236, 0.85);
-  --danger: #B23A2A;
-  --danger-line: #F0C9C0;
-  --danger-tint: #FDF0ED;
-  --mutual-ink: #7A4A00;
-  --mutual-bg: #FFF0D4;
-  --grain-opacity: 0.035;
+  --tint: #f5f5f7;
+  --control-track: #e8e8ed;
+  --badge-bg: #eaf3ff;
 
-  --blinkit-tint: #FEF6DC; --blinkit-on: #6B5410;
-  --zomato-tint: #FCE8EA;  --zomato-on: #8E1F29;
-  --swiggy-tint: #FFEEDD;  --swiggy-on: #8A4408;
+  /* Each app's own pastel wash — the same idiom Calendar and Reminders use
+     for colour-coded rows, kept light enough that body text never needs a
+     special case to stay readable on it. */
+  --blinkit-tint: #FBEFC7; --blinkit-on: #6B5410;
+  --zomato-tint:  #FBE4E6; --zomato-on:  #9A2530;
+  --swiggy-tint:  #FDE9D7; --swiggy-on:  #8A4408;
+  --code-bg: rgba(0, 0, 0, 0.045);
+  --topbar-bg: rgba(245, 245, 247, 0.82);
+  --danger: #d70015;
+  --danger-line: rgba(215, 0, 21, 0.28);
+  --danger-tint: #fff1f0;
+  --mutual-ink: #a15c00;
+  --mutual-bg: #fff2d9;
 
-  --radius: 18px;
-  --font-display: "Fraunces", serif;
-  --font-body: "Manrope", sans-serif;
-  --font-mono: "IBM Plex Mono", monospace;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow: 0 2px 5px rgba(0, 0, 0, 0.04), 0 10px 24px -12px rgba(0, 0, 0, 0.10);
+
+  /* Ambient background orbs — see .ambient below. Two hues, not brand colours:
+     the blue echoes --accent, the warm tone is deliberately its own thing so
+     it never reads as "this is a Swiggy/Zomato highlight". */
+  --orb-blue: 0, 113, 227;
+  --orb-warm: 255, 149, 92;
+  --orb-violet: 175, 82, 222;
+  --orb-opacity: 0.16;
+
+  --radius: 16px;
+  /* Apple doesn't swap typeface between display and body copy, weight does
+     the work — so both variables resolve to the same system stack. Mono is
+     kept for the one place that's genuinely showing diagnostic output. */
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
 }
 
 /* Dark theme.
@@ -39,59 +60,75 @@
    the price of doing this without a preprocessor. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --ink: #E6EFEA;
-    --ink-soft: #B2C5BC;
-    --bg: #0F1A17;
-    --surface: #18251F;
-    --accent: #FF7C5E;
-    --accent-ink: #FFC9BA;
-    --accent2: #6FD0AC;
-    --muted: #869893;
-    --line: #2A3B34;
-    --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6);
+    --bg: #000000;
+    --surface: #1c1c1e;
+    --ink: #f5f5f7;
+    --ink-soft: #ababaf;
+    --muted: #8e8e93;
+    --line: rgba(255, 255, 255, 0.14);
+    --accent: #0a84ff;
+    --accent-hover: #409cff;
+    --accent-ink: #409cff;
+    --accent-fill: #0068cc;
 
-    --tint: #14231D;
-    --badge-bg: #1C3A30;
-    --code-bg: rgba(255, 255, 255, 0.06);
-    --topbar-bg: rgba(15, 26, 23, 0.85);
-    --danger: #FF9484;
-    --danger-line: #5B2C24;
-    --danger-tint: #2A1712;
-    --mutual-ink: #FFD79A;
-    --mutual-bg: #3B2A11;
-    --grain-opacity: 0.02;
+    --tint: #2c2c2e;
+    --control-track: #1c1c1e;
+    --badge-bg: #14283d;
 
     --blinkit-tint: #3A3216; --blinkit-on: #F8CB46;
-    --zomato-tint: #3A1C20;  --zomato-on: #FF8A93;
-    --swiggy-tint: #3A2512;  --swiggy-on: #FFA662;
+    --zomato-tint:  #3A1C20; --zomato-on:  #FF8A93;
+    --swiggy-tint:  #3A2512; --swiggy-on:  #FFA662;
+    --code-bg: rgba(255, 255, 255, 0.07);
+    --topbar-bg: rgba(0, 0, 0, 0.72);
+    --danger: #ff453a;
+    --danger-line: rgba(255, 69, 58, 0.35);
+    --danger-tint: #2c1513;
+    --mutual-ink: #ffb340;
+    --mutual-bg: #3a2a10;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow: 0 2px 6px rgba(0, 0, 0, 0.35), 0 12px 28px -14px rgba(0, 0, 0, 0.55);
+
+    --orb-blue: 10, 132, 255;
+    --orb-warm: 255, 138, 76;
+    --orb-violet: 191, 90, 242;
+    --orb-opacity: 0.22;
   }
 }
 :root[data-theme="dark"] {
-  --ink: #E6EFEA;
-  --ink-soft: #B2C5BC;
-  --bg: #0F1A17;
-  --surface: #18251F;
-  --accent: #FF7C5E;
-  --accent-ink: #FFC9BA;
-  --accent2: #6FD0AC;
-  --muted: #869893;
-  --line: #2A3B34;
-  --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6);
+  --bg: #000000;
+  --surface: #1c1c1e;
+  --ink: #f5f5f7;
+  --ink-soft: #ababaf;
+  --muted: #8e8e93;
+  --line: rgba(255, 255, 255, 0.14);
+  --accent: #0a84ff;
+  --accent-hover: #409cff;
+  --accent-ink: #409cff;
+  --accent-fill: #0068cc;
 
-  --tint: #14231D;
-  --badge-bg: #1C3A30;
-  --code-bg: rgba(255, 255, 255, 0.06);
-  --topbar-bg: rgba(15, 26, 23, 0.85);
-  --danger: #FF9484;
-  --danger-line: #5B2C24;
-  --danger-tint: #2A1712;
-  --mutual-ink: #FFD79A;
-  --mutual-bg: #3B2A11;
-  --grain-opacity: 0.02;
+  --tint: #2c2c2e;
+  --control-track: #1c1c1e;
+  --badge-bg: #14283d;
 
   --blinkit-tint: #3A3216; --blinkit-on: #F8CB46;
-  --zomato-tint: #3A1C20;  --zomato-on: #FF8A93;
-  --swiggy-tint: #3A2512;  --swiggy-on: #FFA662;
+  --zomato-tint:  #3A1C20; --zomato-on:  #FF8A93;
+  --swiggy-tint:  #3A2512; --swiggy-on:  #FFA662;
+  --code-bg: rgba(255, 255, 255, 0.07);
+  --topbar-bg: rgba(0, 0, 0, 0.72);
+  --danger: #ff453a;
+  --danger-line: rgba(255, 69, 58, 0.35);
+  --danger-tint: #2c1513;
+  --mutual-ink: #ffb340;
+  --mutual-bg: #3a2a10;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 2px 6px rgba(0, 0, 0, 0.35), 0 12px 28px -14px rgba(0, 0, 0, 0.55);
+
+  --orb-blue: 10, 132, 255;
+  --orb-warm: 255, 138, 76;
+  --orb-violet: 191, 90, 242;
+  --orb-opacity: 0.22;
 }
 
 /* Let form controls, scrollbars and the like follow the theme automatically. */
@@ -116,6 +153,7 @@ html, body {
   color: var(--ink);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 body {
@@ -124,17 +162,8 @@ body {
   position: relative;
 }
 
-.grain {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  opacity: var(--grain-opacity);
-  z-index: 0;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
 .wrap {
-  max-width: 760px;
+  max-width: 680px;
   margin: 0 auto;
   padding: 0 20px;
   position: relative;
@@ -142,6 +171,82 @@ body {
 }
 
 a { color: inherit; }
+
+/* ---------- ambient background ----------
+   Two large, heavily blurred colour fields, drifting very slowly behind
+   everything. This sits at z-index 0, under .wrap and every modal — it never
+   competes with content, and every card/surface in the app is an OPAQUE
+   fill, so the wash is only ever visible through the actual page gaps (hero
+   padding, the space between cards, the frosted topbar) and briefly through
+   the topbar's own translucency. Nothing here touches text contrast: the
+   contrast audit done for every card and theme was against the solid
+   --surface/--tint fills, which this never shows through.
+
+   Only `transform` (and, on the outer wrapper, `filter: hue-rotate`) is
+   animated — opacity, blur and base colour are all static — so this stays
+   mostly compositor-only work and cheap on a phone. The global
+   prefers-reduced-motion rule further down already freezes every animation
+   in the file, this one included, so there's no separate guard needed here. */
+.ambient {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+  animation: hue-drift 60s linear infinite;
+}
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  will-change: transform;
+}
+.orb-a {
+  width: 60vmax;
+  height: 60vmax;
+  left: -18vmax;
+  top: -22vmax;
+  background: radial-gradient(circle at 35% 35%, rgba(var(--orb-blue), var(--orb-opacity)), rgba(var(--orb-blue), 0) 70%);
+  animation: drift-a 34s ease-in-out infinite alternate;
+}
+.orb-b {
+  width: 54vmax;
+  height: 54vmax;
+  right: -16vmax;
+  bottom: -20vmax;
+  background: radial-gradient(circle at 60% 60%, rgba(var(--orb-warm), var(--orb-opacity)), rgba(var(--orb-warm), 0) 70%);
+  animation: drift-b 28s ease-in-out infinite alternate;
+  animation-delay: -6s; /* offset so the two never move in lockstep */
+}
+@keyframes drift-a {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(6vmax, 5vmax) scale(1.08); }
+  100% { transform: translate(-4vmax, 8vmax) scale(0.98); }
+}
+@keyframes drift-b {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(-7vmax, -4vmax) scale(1.06); }
+  100% { transform: translate(3vmax, -9vmax) scale(0.97); }
+}
+.orb-c {
+  width: 46vmax;
+  height: 46vmax;
+  left: 22vmax;
+  bottom: -18vmax;
+  background: radial-gradient(circle at 45% 45%, rgba(var(--orb-violet), var(--orb-opacity)), rgba(var(--orb-violet), 0) 70%);
+  animation: drift-c 40s ease-in-out infinite alternate;
+  animation-delay: -14s;
+}
+@keyframes drift-c {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(-5vmax, 7vmax) scale(1.1); }
+  100% { transform: translate(6vmax, -3vmax) scale(0.95); }
+}
+@keyframes hue-drift {
+  0%   { filter: hue-rotate(0deg); }
+  50%  { filter: hue-rotate(20deg); }
+  100% { filter: hue-rotate(0deg); }
+}
 
 /* ---------- login gate ---------- */
 .login-gate {
@@ -163,32 +268,32 @@ a { color: inherit; }
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 20px;
-  padding: 32px 28px;
+  padding: 36px 28px;
   box-shadow: var(--shadow);
   text-align: center;
 }
 .login-brand {
   justify-content: center;
-  margin-bottom: 22px;
+  margin-bottom: 24px;
 }
 .login-title {
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 26px;
+  letter-spacing: -0.01em;
   margin: 0 0 8px;
 }
 .login-sub {
   font-size: 14px;
   color: var(--ink-soft);
   line-height: 1.5;
-  margin: 0 0 22px;
+  margin: 0 0 24px;
 }
-.login-form { text-align: left; }
 .login-note {
   font-size: 13px;
-  color: var(--accent2);
+  color: var(--accent-ink);
   min-height: 18px;
-  margin: 12px 0 0;
+  margin: 14px 0 0;
 }
 .login-note.error { color: var(--danger); }
 
@@ -201,7 +306,7 @@ a { color: inherit; }
 .login-diag summary {
   cursor: pointer;
   font-weight: 600;
-  color: var(--accent2);
+  color: var(--accent-ink);
 }
 .login-diag pre {
   margin: 10px 0 0;
@@ -216,8 +321,9 @@ a { color: inherit; }
 }
 
 .whoami-email {
-  font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
   color: var(--ink-soft);
 }
 
@@ -229,23 +335,59 @@ a { color: inherit; }
   gap: 10px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 100px;
-  padding: 12px 18px;
+  border-radius: 980px;
+  padding: 13px 18px;
   font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 14.5px;
+  font-weight: 600;
+  font-size: 15px;
   color: var(--ink);
   cursor: pointer;
-  transition: box-shadow 0.15s ease, transform 0.12s ease;
+  transition: box-shadow 0.2s cubic-bezier(0.25, 0.1, 0.25, 1), transform 0.12s ease;
 }
-.btn-google:hover { box-shadow: var(--shadow); }
+.btn-google:hover { box-shadow: var(--shadow-sm); }
 .btn-google:active { transform: scale(0.98); }
+.btn-google:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* In-app browser escape notice (Instagram/WhatsApp/etc.) */
+.login-inapp {
+  margin-top: 16px;
+  padding: 14px;
+  background: var(--code-bg);
+  border-radius: 12px;
+  text-align: center;
+}
+.login-inapp-msg {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.btn-copy {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 980px;
+  padding: 9px 20px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, transform 0.12s ease;
+}
+.btn-copy:hover { box-shadow: var(--shadow-sm); }
+.btn-copy:active { transform: scale(0.98); }
 
 /* ---------- topbar ---------- */
 .topbar {
   border-bottom: 1px solid var(--line);
   background: var(--topbar-bg);
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   position: sticky;
   top: 0;
   z-index: 40;
@@ -254,7 +396,7 @@ a { color: inherit; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 64px;
+  height: 56px;
 }
 .brand {
   display: flex;
@@ -263,10 +405,20 @@ a { color: inherit; }
   text-decoration: none;
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 20px;
+  font-size: 18px;
+  letter-spacing: -0.01em;
   color: var(--ink);
 }
-.brand-mark { color: var(--accent); font-size: 18px; }
+.brand-mark {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+.login-brand .brand-mark {
+  width: 30px;
+  height: 30px;
+}
 
 .whoami {
   display: flex;
@@ -276,94 +428,91 @@ a { color: inherit; }
   color: var(--muted);
 }
 .whoami-name {
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-weight: 600;
   font-size: 13px;
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 100px;
+  border-radius: 980px;
   padding: 6px 14px;
   cursor: pointer;
+  transition: border-color 0.15s ease;
 }
 .whoami-name:hover { border-color: var(--accent); }
 
 .icon-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 34px;
   height: 34px;
-  font-size: 15px;
-  line-height: 1;
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 100px;
+  border-radius: 980px;
   cursor: pointer;
-  transition: border-color 0.15s, transform 0.12s;
+  transition: border-color 0.15s ease, transform 0.12s ease;
 }
 .icon-btn:hover { border-color: var(--accent); }
 .icon-btn:active { transform: scale(0.94); }
 
 /* ---------- hero ---------- */
 .hero {
-  padding: 56px 0 32px;
+  padding: 40px 0 28px;
 }
 .eyebrow {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--accent2);
-  margin: 0 0 14px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0 0 10px;
 }
 .hero-title {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: clamp(34px, 6vw, 52px);
-  line-height: 1.05;
-  margin: 0 0 18px;
-  letter-spacing: -0.01em;
+  font-size: clamp(30px, 6vw, 44px);
+  line-height: 1.08;
+  margin: 0;
+  letter-spacing: -0.02em;
+  color: var(--ink);
 }
-.hero-title em {
-  font-style: italic;
-  font-weight: 500;
-  color: var(--accent);
-}
+.hero-accent { color: var(--accent-ink); }
+
 /* ---------- app identity ----------
-   Each app gets a brand colour that drives its filter bubble, its card accent
-   and its dot. Kept as custom properties so a card can set --app-accent once
-   and everything inside it inherits the right colour. */
+   Each app keeps its real brand colour — that's not decoration, it's how
+   three delivery apps stay tellable-apart at a glance. It shows up in exactly
+   two restrained places: the small mark, and a hairline accent on the card's
+   own edge. Nothing gets a saturated coloured background. */
 .app-dot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 20px;
   height: 20px;
-  border-radius: 7px;
+  border-radius: 6px;
   font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 12px;
+  font-weight: 600;
+  font-size: 11px;
   line-height: 1;
   text-transform: lowercase;
   flex-shrink: 0;
 }
 .app-dot svg {
-  width: 72%;
-  height: 72%;
+  width: 68%;
+  height: 68%;
   display: block;
 }
-.app-dot[data-app="Blinkit"] { background: #F8CB46; color: #1B2A2F; }
+.app-dot[data-app="Blinkit"] { background: #F8CB46; color: #1d1d1f; }
 .app-dot[data-app="Zomato"]  { background: #E23744; color: #fff; }
 .app-dot[data-app="Swiggy"]  { background: #FC8019; color: #fff; }
-.app-dot-mine { background: var(--ink); color: var(--bg); }
 
 /* ---------- filter bubbles ---------- */
 .filter-strip {
   margin: 4px 0 14px;
   /* let the row scroll sideways on narrow phones rather than wrapping into
-     two ragged lines — four bubbles don't fit at 360px */
+     two ragged lines — five bubbles don't fit at 360px */
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
@@ -383,35 +532,46 @@ a { color: inherit; }
 
 .filter-tabs {
   display: inline-flex;
-  gap: 8px;
+  gap: 6px;
   min-width: min-content;
+  /* A real segmented control needs a strict brightness order: track sits
+     BELOW page level, the active pill sits ABOVE it. --tint alone couldn't
+     hold that promise in both themes at once — in dark mode it made the
+     "selected" pill read darker than its own track, and in light mode it was
+     literally the same colour as the page, so the track had no visible edge. */
+  background: var(--control-track);
+  padding: 3px;
+  border-radius: 980px;
 }
+/* A single neutral "selected" style for every tab — like a real segmented
+   control, rather than each tab flashing its own brand colour when active.
+   The app's identity still shows through its dot; the tab itself doesn't
+   need to shout it too. */
 .filter-tab {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  background: var(--surface);
-  border: 1.5px solid var(--line);
+  gap: 7px;
+  background: transparent;
+  border: none;
   font-family: var(--font-body);
-  font-weight: 700;
+  font-weight: 600;
   font-size: 13.5px;
   color: var(--ink-soft);
   padding: 8px 16px 8px 10px;
-  border-radius: 100px;
+  border-radius: 980px;
   cursor: pointer;
   white-space: nowrap;
-  transition: border-color 0.15s, color 0.15s, background 0.15s, box-shadow 0.15s;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
-.filter-tab:hover { border-color: var(--muted); }
+.filter-tab:hover { color: var(--ink); }
 .filter-tab.active {
-  border-color: var(--app-accent, var(--ink));
-  background: var(--app-tint, var(--ink));
-  color: var(--app-on, var(--bg));
-  box-shadow: 0 6px 16px -8px var(--app-accent, rgba(27, 42, 47, 0.5));
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
-.filter-tab[data-app="Blinkit"] { --app-accent: #F8CB46; --app-tint: var(--blinkit-tint); --app-on: var(--blinkit-on); }
-.filter-tab[data-app="Zomato"]  { --app-accent: #E23744; --app-tint: var(--zomato-tint); --app-on: var(--zomato-on); }
-.filter-tab[data-app="Swiggy"]  { --app-accent: #FC8019; --app-tint: var(--swiggy-tint); --app-on: var(--swiggy-on); }
+.filter-tab.active[data-app="Blinkit"] { background: var(--blinkit-tint); color: var(--blinkit-on); }
+.filter-tab.active[data-app="Zomato"]  { background: var(--zomato-tint);  color: var(--zomato-on); }
+.filter-tab.active[data-app="Swiggy"]  { background: var(--swiggy-tint);  color: var(--swiggy-on); }
 
 /* ---------- search & filters ----------
    Both live behind icon buttons on the heading row. Permanently visible they
@@ -421,7 +581,6 @@ a { color: inherit; }
   align-items: center;
   gap: 8px;
 }
-.icon-btn { position: relative; }
 
 /* Dot on the filter icon while any filter is actually narrowing the board, so
    a filtered view never looks like the full one. */
@@ -436,39 +595,67 @@ a { color: inherit; }
   border: 2px solid var(--bg);
 }
 .icon-btn.on {
-  border-color: var(--accent2);
-  color: var(--accent2);
+  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 
+/* Search and filters collapse and expand smoothly instead of popping via
+   [hidden]/display:none, which can't be transitioned at all.
+
+   This used to be the grid-template-rows 0fr -> 1fr trick, which avoids
+   having to know the content's height up front — but it turned out not to
+   collapse reliably here: measured directly, the browser resolved a
+   supposed 0fr row to 30px, not 0, because .tool-panel has no definite
+   height of its own for the fr unit to divide (an "auto" grid container
+   isn't guaranteed to size 0fr tracks to zero, whatever the mental model
+   suggests). max-height with a fixed, generous ceiling has none of that
+   ambiguity: 0 is unambiguously 0. The cost is that the two panels' actual
+   content (well under 400px) is smaller than the 600px ceiling, so the
+   transition eases across a slightly larger nominal range than it visually
+   travels — imperceptible at this animation length, and worth it for
+   something that reliably actually closes. */
 .tool-panel {
-  margin: 0 0 16px;
+  overflow: hidden;
+  max-height: 0;
+  margin-bottom: 0;
+  transition: max-height 0.32s cubic-bezier(0.25, 0.1, 0.25, 1),
+              margin-bottom 0.32s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.tool-panel.open {
+  max-height: 600px;
+  margin-bottom: 16px;
+}
+.tool-panel-inner {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 12px;
+  border-radius: var(--radius);
+  padding: 14px;
   box-shadow: var(--shadow);
-  animation: rise 0.18s ease both;
 }
 .search-main {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: var(--bg);
-  border: 1.5px solid var(--line);
+  background: var(--tint);
+  border: 1px solid transparent;
   border-radius: 12px;
   padding: 0 12px;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s ease;
 }
-.search-main:focus-within { border-color: var(--accent2); }
-.search-icon { font-size: 15px; opacity: 0.7; }
+.search-main:focus-within { border-color: var(--accent); }
+.search-icon {
+  display: inline-flex;
+  color: var(--muted);
+  flex-shrink: 0;
+}
 .search-main input {
   flex: 1;
   min-width: 0;
   border: none;
   background: transparent;
   font-family: var(--font-body);
-  font-size: 15.5px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 400;
   color: var(--ink);
   padding: 13px 0;
 }
@@ -497,15 +684,15 @@ a { color: inherit; }
   align-items: center;
   gap: 4px;
   background: var(--surface);
-  border: 1.5px solid var(--line);
-  border-radius: 100px;
+  border: 1px solid var(--line);
+  border-radius: 980px;
   padding: 2px 10px 2px 14px;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s ease;
 }
-.sort-pill:focus-within { border-color: var(--accent2); }
+.sort-pill:focus-within { border-color: var(--accent); }
 .sort-pill-label {
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 500;
   color: var(--muted);
   white-space: nowrap;
 }
@@ -513,7 +700,7 @@ a { color: inherit; }
   border: none;
   background: transparent;
   font-family: var(--font-body);
-  font-weight: 700;
+  font-weight: 600;
   font-size: 13.5px;
   color: var(--ink);
   padding: 7px 0;
@@ -524,7 +711,7 @@ a { color: inherit; }
 /* Full width: the option labels carry the buildings each spot covers, which
    won't fit in a third of a phone screen. */
 .filter-location { margin-bottom: 10px; }
-.filter-location select { background: var(--bg); }
+.filter-location select { background: var(--tint); }
 
 .search-filters {
   display: grid;
@@ -536,10 +723,8 @@ a { color: inherit; }
 .search-filters .field select {
   padding: 9px 10px;
   font-size: 14px;
-  background: var(--bg);
+  background: var(--tint);
 }
-/* Stay three-up even on small phones — stacking these pushed the board
-   itself below the fold, which defeats the point of the board. */
 @media (max-width: 520px) {
   .search-filters { gap: 6px; }
   .search-filters .field-label { font-size: 11px; }
@@ -550,86 +735,24 @@ a { color: inherit; }
   margin: 10px 0 0;
   text-align: center;
   font-size: 12.5px;
-  color: var(--accent2);
-  font-weight: 600;
+  color: var(--accent-ink);
+  font-weight: 500;
   min-height: 16px;
 }
 
 .card.matched {
-  border-color: var(--accent2);
-  box-shadow: 0 1px 2px rgba(27,42,47,0.06), 0 8px 24px -10px rgba(47,111,94,0.35);
+  border-color: var(--accent);
 }
 .match-badge {
   display: inline-block;
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: 11px;
   font-weight: 600;
-  color: var(--accent2);
+  color: var(--accent-ink);
   background: var(--badge-bg);
-  border-radius: 100px;
+  border-radius: 980px;
   padding: 2px 9px;
   margin-left: 6px;
-}
-
-/* ---------- quick post ---------- */
-.quick-post {
-  margin: 4px 0 18px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 12px 14px;
-  animation: rise 0.25s ease both;
-}
-.quick-post-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.quick-post-label {
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--accent2);
-  white-space: nowrap;
-  margin-right: 2px;
-}
-.quick-post select,
-.quick-post-amount {
-  font-family: var(--font-body);
-  font-size: 14px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--bg);
-  color: var(--ink);
-}
-.quick-post select { flex: 1 1 120px; min-width: 0; }
-.quick-post-amount {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  flex: 1 1 90px;
-}
-.quick-post-amount span { color: var(--muted); font-weight: 600; }
-.quick-post-amount input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  font-size: 14px;
-  color: var(--ink);
-  padding: 0;
-}
-.quick-post-amount input:focus { outline: none; }
-.quick-post .btn {
-  padding: 9px 18px;
-  font-size: 13px;
-  white-space: nowrap;
-}
-.quick-post-note {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--muted);
 }
 
 /* ---------- board controls ---------- */
@@ -638,41 +761,44 @@ a { color: inherit; }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 12px 0 20px;
+  margin: 16px 0 20px;
   flex-wrap: wrap;
 }
 .board-heading {
   margin: 0;
   font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 19px;
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.01em;
   color: var(--ink);
 }
 
 .btn {
   font-family: var(--font-body);
-  font-weight: 700;
+  font-weight: 600;
   font-size: 14px;
   border: none;
-  border-radius: 100px;
+  border-radius: 980px;
   padding: 12px 20px;
   cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  transition: transform 0.12s ease, filter 0.15s ease, box-shadow 0.15s ease;
 }
 .btn:active { transform: scale(0.97); }
 .btn-primary {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
-  box-shadow: 0 6px 16px -6px rgba(255,107,74,0.55);
 }
-.btn-primary:hover { box-shadow: 0 8px 20px -6px rgba(255,107,74,0.65); }
-.btn-block { width: 100%; margin-top: 6px; }
+@media (hover: hover) {
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-google:hover { filter: brightness(0.99); }
+}
+.btn-block { width: 100%; margin-top: 8px; }
 
 /* ---------- board / cards ---------- */
 .board {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   padding-bottom: 40px;
 }
 
@@ -688,17 +814,17 @@ a { color: inherit; }
   align-items: start;
 }
 .card.card-enter {
-  animation: rise 0.35s ease both;
+  animation: rise 0.35s cubic-bezier(0.25, 0.1, 0.25, 1) both;
 }
 
-/* The card someone landed on from a shared link. */
+/* The card someone landed on from a shared link — a quiet fade of the accent
+   colour through the card's own border, not a pulsing coloured ring. */
 .card.card-highlight {
-  animation: flash-ring 2.4s ease both;
+  animation: flash-highlight 1.8s ease both;
 }
-@keyframes flash-ring {
-  0%   { box-shadow: 0 0 0 0 rgba(255, 107, 74, 0.55), var(--shadow); }
-  15%  { box-shadow: 0 0 0 6px rgba(255, 107, 74, 0.28), var(--shadow); }
-  100% { box-shadow: 0 0 0 0 rgba(255, 107, 74, 0), var(--shadow); }
+@keyframes flash-highlight {
+  0%   { border-color: var(--accent); background: var(--badge-bg); }
+  100% { border-color: var(--line); background: var(--surface); }
 }
 @keyframes rise {
   from { opacity: 0; transform: translateY(6px); }
@@ -712,24 +838,23 @@ a { color: inherit; }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: var(--tint);
-  border: 1px solid var(--line);
+  background: var(--surface);
   border-radius: 14px;
   padding: 10px 6px;
   text-align: center;
 }
 .amount-value {
-  font-family: var(--font-mono);
-  font-weight: 600;
-  font-size: 19px;
-  color: var(--accent2);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-ink);
   line-height: 1.1;
 }
 .amount-caption {
   font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-weight: 600;
   color: var(--muted);
   margin-top: 3px;
 }
@@ -748,16 +873,17 @@ a { color: inherit; }
   gap: 7px;
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 18px;
+  font-size: 17px;
   min-width: 0;
+  color: var(--ink);
 }
 .card-outlet {
   font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 13px;
+  font-weight: 600;
+  font-size: 12.5px;
   color: var(--ink-soft);
-  background: var(--bg);
-  border-radius: 100px;
+  background: var(--surface);
+  border-radius: 980px;
   padding: 3px 10px;
   white-space: nowrap;
   overflow: hidden;
@@ -766,25 +892,26 @@ a { color: inherit; }
 }
 /* left edge of the card carries the app's colour so the board stays readable
    when several apps are mixed together (the "Mine" tab) */
-.card { border-left: 4px solid var(--app-accent, var(--line)); }
-.card[data-app="Blinkit"] { --app-accent: #F8CB46; }
-.card[data-app="Zomato"]  { --app-accent: #E23744; }
-.card[data-app="Swiggy"]  { --app-accent: #FC8019; }
+.card { border-left: 3px solid var(--app-accent, var(--line)); }
+.card[data-app="Blinkit"] { --app-accent: #F8CB46; background: var(--blinkit-tint); }
+.card[data-app="Zomato"]  { --app-accent: #E23744; background: var(--zomato-tint); }
+.card[data-app="Swiggy"]  { --app-accent: #FC8019; background: var(--swiggy-tint); }
 .card-timer {
-  font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
   white-space: nowrap;
 }
-.card-timer.urgent { color: var(--accent); }
+.card-timer.urgent { color: var(--danger); }
 
 .card-amounts {
-  font-family: var(--font-mono);
   font-size: 14px;
+  font-variant-numeric: tabular-nums;
   color: var(--ink-soft);
   margin: 4px 0 8px;
 }
-.card-amounts b { color: var(--ink); }
+.card-amounts b { color: var(--ink); font-weight: 600; }
 
 .card-items {
   font-size: 14px;
@@ -801,43 +928,45 @@ a { color: inherit; }
 }
 .card-loc {
   font-size: 13px;
-  color: var(--muted);
+  color: var(--ink-soft);
   display: flex;
   align-items: center;
   gap: 5px;
 }
+.card-loc svg { flex-shrink: 0; }
 .card-poster {
   font-size: 13px;
-  color: var(--muted);
+  color: var(--ink-soft);
 }
-.card-poster b { color: var(--ink-soft); }
+.card-poster b { color: var(--ink-soft); font-weight: 600; }
 
 /* Your own cards carry three actions (Edit / +15 min / Remove), which won't
    sit on one line on a narrow phone. */
-.card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.card-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .btn-ghost {
   background: transparent;
   border: 1px solid var(--line);
   color: var(--ink);
   font-family: var(--font-body);
-  font-weight: 700;
+  font-weight: 600;
   font-size: 13px;
-  border-radius: 100px;
+  border-radius: 980px;
   padding: 8px 16px;
   cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
-.btn-ghost:hover { border-color: var(--accent2); color: var(--accent2); }
+.btn-ghost:hover { border-color: var(--accent); color: var(--accent-ink); }
 .btn-danger { color: var(--danger); border-color: var(--danger-line); }
-.btn-danger:hover { background: var(--danger-tint); }
+.btn-danger:hover { background: var(--danger-tint); border-color: var(--danger-line); color: var(--danger); }
 
 .contact-reveal {
   margin-top: 10px;
   padding: 10px 12px;
   background: var(--tint);
-  border: 1px dashed var(--line);
   border-radius: 10px;
   font-size: 13px;
-  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
 }
 .wa-link {
   margin-top: 8px;
@@ -845,30 +974,32 @@ a { color: inherit; }
   display: block;
   text-align: center;
   background: #25D366;
-  box-shadow: none;
 }
-.wa-link:hover { background: #20bd5a; }
+@media (hover: hover) {
+  .wa-link:hover { filter: brightness(0.96); }
+}
 
 /* ---------- matches ---------- */
 .card-matches {
   margin-top: 10px;
-  border-top: 1px dashed var(--line);
+  border-top: 1px solid var(--line);
   padding-top: 10px;
 }
 .card-matches summary {
   cursor: pointer;
   font-size: 13px;
-  font-weight: 700;
-  color: var(--accent2);
+  font-weight: 600;
+  color: var(--accent-ink);
   list-style: none;
 }
 .card-matches summary::-webkit-details-marker { display: none; }
 .card-matches summary::before {
-  content: "▸ ";
+  content: "›";
   display: inline-block;
+  margin-right: 4px;
   transition: transform 0.15s ease;
 }
-.card-matches[open] summary::before { content: "▾ "; }
+.card-matches[open] summary::before { transform: rotate(90deg); }
 
 .match-list { display: flex; flex-direction: column; gap: 8px; }
 .card-matches .match-list { margin-top: 9px; }
@@ -878,14 +1009,13 @@ a { color: inherit; }
   align-items: center;
   gap: 10px;
   background: var(--tint);
-  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 10px 12px;
 }
 .match-row-main { flex: 1; min-width: 0; }
 .match-row-name {
   font-size: 13.5px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--ink);
   display: flex;
   align-items: center;
@@ -893,8 +1023,8 @@ a { color: inherit; }
   flex-wrap: wrap;
 }
 .match-row-sub {
-  font-family: var(--font-mono);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
   margin-top: 2px;
 }
@@ -908,12 +1038,11 @@ a { color: inherit; }
 }
 .match-row .wa-link { margin-top: 8px; }
 .mutual-badge {
-  font-family: var(--font-mono);
   font-size: 10.5px;
   font-weight: 600;
   color: var(--mutual-ink);
   background: var(--mutual-bg);
-  border-radius: 100px;
+  border-radius: 980px;
   padding: 2px 8px;
 }
 .match-intro {
@@ -934,25 +1063,23 @@ a { color: inherit; }
   display: flex;
   align-items: center;
   gap: 9px;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--tint);
   border-radius: 12px;
   padding: 11px 13px;
   font-size: 14px;
   color: var(--ink-soft);
   margin-bottom: 14px;
 }
-.posting-to b { color: var(--ink); }
+.posting-to b { color: var(--ink); font-weight: 600; }
 .posting-to-change {
   margin-left: auto;
   background: none;
   border: none;
   font-family: var(--font-body);
   font-size: 12.5px;
-  font-weight: 700;
-  color: var(--accent2);
+  font-weight: 600;
+  color: var(--accent-ink);
   cursor: pointer;
-  text-decoration: underline;
 }
 
 .empty-state {
@@ -974,30 +1101,31 @@ a { color: inherit; }
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(19,28,26,0.45);
+  background: rgba(0, 0, 0, 0.32);
   display: none;
   align-items: flex-end;
   justify-content: center;
   z-index: 100;
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 .modal-backdrop.open { display: flex; }
 .modal {
   background: var(--bg);
   width: 100%;
   max-width: 480px;
-  border-radius: 22px 22px 0 0;
+  border-radius: 20px 20px 0 0;
   padding: 22px 22px 28px;
   max-height: 90vh;
   max-height: 90dvh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  box-shadow: 0 -10px 40px rgba(0,0,0,0.25);
-  animation: slideup 0.25s ease both;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.18);
+  animation: slideup 0.28s cubic-bezier(0.25, 0.1, 0.25, 1) both;
 }
 @media (min-width: 560px) {
   .modal-backdrop { align-items: center; }
-  .modal { border-radius: 20px; }
+  .modal { border-radius: 18px; }
 }
 @keyframes slideup {
   from { transform: translateY(24px); opacity: 0; }
@@ -1007,18 +1135,19 @@ a { color: inherit; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 .modal-head h2 {
   font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 22px;
+  font-weight: 700;
+  font-size: 21px;
+  letter-spacing: -0.01em;
   margin: 0;
 }
 .modal-close {
   background: none;
   border: none;
-  font-size: 26px;
+  font-size: 24px;
   line-height: 1;
   color: var(--muted);
   cursor: pointer;
@@ -1028,14 +1157,14 @@ a { color: inherit; }
 .field-label {
   display: block;
   font-size: 12.5px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--ink-soft);
   margin-bottom: 6px;
 }
 .field input, .field select {
   width: 100%;
   font-family: var(--font-body);
-  font-size: 15px;
+  font-size: 16px;
   padding: 11px 13px;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -1043,9 +1172,9 @@ a { color: inherit; }
   color: var(--ink);
 }
 .field input:focus, .field select:focus {
-  outline: 2px solid var(--accent2);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
-  border-color: var(--accent2);
+  border-color: var(--accent);
 }
 .field-row {
   display: grid;
@@ -1056,9 +1185,40 @@ a { color: inherit; }
 .field-hint {
   display: block;
   font-size: 12px;
-  color: var(--accent2);
+  color: var(--muted);
   margin-top: 5px;
 }
+
+/* Appears under the free-text outlet field when what someone's typing looks
+   like a typo'd version of an outlet another live order already named — e.g.
+   "Behrooz" while a "Behrouz Biryani" order is already on the board. Without
+   this, two carts from the same restaurant just never club, because the
+   match check compares outlet spellings and these don't agree. */
+.outlet-suggest {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--tint);
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+.outlet-suggest button {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  cursor: pointer;
+}
+.outlet-suggest button:hover { background: var(--accent-hover); }
 
 /* Inline validation, shown at the field itself — a message at the bottom of
    the screen is the wrong place to explain a problem with the input you're
@@ -1066,7 +1226,7 @@ a { color: inherit; }
 .field-error {
   display: block;
   font-size: 12.5px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--danger);
   margin-top: 5px;
 }
@@ -1088,20 +1248,21 @@ a { color: inherit; }
      so without this the toast renders behind it and validation messages are
      invisible exactly when they matter most. */
   bottom: calc(24px + env(safe-area-inset-bottom, 0px) + var(--kb-inset, 0px));
-  transition: bottom 0.2s ease;
   left: 50%;
   transform: translateX(-50%) translateY(20px);
   background: var(--ink);
   color: var(--bg);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   padding: 12px 20px;
-  border-radius: 100px;
+  border-radius: 980px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition: opacity 0.25s ease, transform 0.25s ease, bottom 0.2s ease;
   z-index: 200;
   box-shadow: var(--shadow);
+  max-width: calc(100vw - 48px);
+  text-align: center;
 }
 .toast.show {
   opacity: 1;
@@ -1110,7 +1271,7 @@ a { color: inherit; }
 
 /* focus visibility for a11y */
 button:focus-visible, a:focus-visible {
-  outline: 2px solid var(--accent2);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -1130,8 +1291,6 @@ button:focus-visible, a:focus-visible {
   .search-main input,
   .search-filters .field input,
   .search-filters .field select,
-  .quick-post select,
-  .quick-post-amount input,
   .sort-pill select {
     font-size: 16px;
   }
@@ -1140,9 +1299,9 @@ button:focus-visible, a:focus-visible {
 /* Tap feedback shouldn't be a grey rectangle over rounded cards. */
 @media (hover: none) {
   * { -webkit-tap-highlight-color: transparent; }
-  .btn:active, .btn-ghost:active, .filter-tab:active, .icon-btn:active { opacity: 0.75; }
+  .btn:active, .btn-ghost:active, .filter-tab:active, .icon-btn:active { opacity: 0.7; }
   /* hover styles stick on touch after a tap — don't define them here */
-  .filter-tab:hover { border-color: var(--line); }
+  .filter-tab:hover { color: var(--ink-soft); }
   .btn-ghost:hover { border-color: var(--line); color: var(--ink); }
 }
 
@@ -1160,23 +1319,20 @@ button:focus-visible, a:focus-visible {
   .field-row { grid-template-columns: 1fr; }
   .card { grid-template-columns: 64px 1fr; padding: 14px; }
   .amount-block { width: 64px; padding: 8px 4px; }
-  .amount-value { font-size: 16px; }
+  .amount-value { font-size: 17px; }
 
   /* 44px minimum touch targets — the bubbles were ~30px tall. Padding is
      tight because five bubbles have to fit a 360px screen. */
-  .filter-tab { min-height: 44px; padding: 8px 9px 8px 6px; font-size: 12px; }
-  .filter-tab-all { padding: 8px 11px; }
+  .filter-tab { min-height: 44px; padding: 7px 9px 7px 6px; font-size: 12px; }
   .btn { min-height: 44px; }
   .btn-ghost { min-height: 40px; }
   .icon-btn, .whoami-name { min-height: 38px; }
   .modal-close { min-width: 44px; min-height: 44px; }
 
-  /* The topbar crowds badly once the name is in it. */
-  .topbar-inner { height: 56px; }
   .whoami-email { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .board-controls { gap: 10px; }
-  .board-heading { font-size: 17px; }
+  .board-heading { font-size: 18px; }
   /* Heading + two icons + Post won't fit 360px with the long label. */
   .btn-long { display: none; }
   .board-tools .btn { padding: 12px 16px; }
@@ -1186,9 +1342,9 @@ button:focus-visible, a:focus-visible {
 
   /* Get the board closer to the top: the hero is nice, but it isn't why
      anyone opened the app. */
-  .hero { padding: 28px 0 20px; }
+  .hero { padding: 24px 0 18px; }
 
-  /* All four bubbles — including "Mine" — must fit on a 360px screen. A tab
+  /* All five bubbles — including "Mine" — must fit on a 360px screen. A tab
      you can only reach by discovering a horizontal scroll is a tab most
      people never find. Bleed the strip into the wrap's gutters for the extra
      40px, and trim the bubbles to cover the rest. */

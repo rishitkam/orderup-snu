@@ -7,6 +7,7 @@
 // ------------------------------------------------------------------
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js";
 import { initializeFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 import {
@@ -21,19 +22,28 @@ export const googleProvider = new GoogleAuthProvider();
 
 const firebaseConfig = {
   apiKey: "AIzaSyC9rTl9gCtEmzM4IYJRoxc3wCQU87OrW84",
-  // Leave this as the firebaseapp.com domain Firebase generated.
+  // Set to the domain the site is actually served from, NOT the default
+  // orderknot-snu.firebaseapp.com Firebase generated. This is deliberate.
   //
-  // It's tempting to "fix" this to match the domain the site is served from
-  // (orderknot-snu.web.app). Don't, unless you have also added
-  // https://orderknot-snu.web.app/__/auth/handler to the Authorized redirect
-  // URIs on the OAuth client in Google Cloud Console — otherwise Google
-  // rejects every sign-in with "Error 400: redirect_uri_mismatch".
+  // signInWithRedirect (the fallback when the popup is blocked, which is what
+  // happens on iOS Safari) sends the browser to Google via a handler hosted on
+  // authDomain, and reads the credential back out of authDomain-owned storage
+  // on return. When authDomain differs from the page origin, that handoff is
+  // cross-origin — and iOS Safari's tracking prevention partitions/wipes that
+  // storage across the round trip, so getRedirectResult() comes back EMPTY and
+  // the user silently bounces to the login screen. (Desktop/Android are lenient
+  // about cross-origin storage, which is why only iPhones were affected.)
   //
-  // Matching domains only mattered for signInWithRedirect, which reads the
-  // credential back out of authDomain-owned storage. We use signInWithPopup
-  // now (see app.js), and a popup returns the credential over postMessage,
-  // which works cross-origin — so this can safely stay as-is.
-  authDomain: "orderknot-snu.firebaseapp.com",
+  // Pointing authDomain at the serving origin keeps the whole flow first-party,
+  // so nothing is partitioned away and iOS completes sign-in.
+  //
+  // PREREQUISITE: https://orderknot-snu.web.app/__/auth/handler must be in the
+  // OAuth client's Authorized redirect URIs (Google Cloud Console → APIs &
+  // Services → Credentials → Web client). Without it Google rejects every
+  // sign-in with "Error 400: redirect_uri_mismatch". It was added there before
+  // this value was changed. Firebase Hosting serves the /__/auth/* handler on
+  // this domain automatically.
+  authDomain: "orderknot-snu.web.app",
   projectId: "orderknot-snu",
   storageBucket: "orderknot-snu.firebasestorage.app",
   messagingSenderId: "72262965540",
@@ -42,6 +52,26 @@ const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
+
+// App Check attaches a reCAPTCHA v3 attestation token to every request this
+// app makes to Firestore, proving to the server that the request came from
+// this real, registered web app and not a script hitting the API directly.
+// Firestore has App Check set to Enforced — without this, the server was
+// rejecting almost every request before Security Rules ever ran, which is
+// why posting failed with "blocked by a database rule" even though the
+// rules themselves were correct.
+//
+// This is the reCAPTCHA *site key* — public by design, meant to ship in
+// client code, the same way the apiKey above does. It is NOT the secret
+// key (that one stays server-side only and is never used here).
+//
+// Initialized here, immediately after `app` and before anything else makes
+// a network call, so every subsequent request is covered from the start.
+initializeAppCheck(app, {
+  provider: new ReCaptchaV3Provider("6LcpWYUtAAAAABtVLyj0DfRX7j0sDJBJ5jA41LRR"),
+  isTokenAutoRefreshEnabled: true
+});
+
 // onSnapshot keeps the board live over a long-running WebChannel stream. Plenty
 // of networks (campus wifi, captive portals, corporate proxies) and some Safari
 // configurations block that stream while still allowing ordinary requests — the

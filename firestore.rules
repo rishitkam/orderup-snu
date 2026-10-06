@@ -3,9 +3,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // .lower() before matching: Firestore's matches() is case-sensitive, and
+    // nothing guarantees the email claim on the ID token is lowercase — Google
+    // accounts can preserve the casing the address was originally registered
+    // with. If this was ever the actual cause of "even reads are denied", it
+    // would explain a failure this total: isStudent() gates read too, so a
+    // false negative here breaks the entire board, not just posting.
     function isStudent() {
       return request.auth != null &&
-             request.auth.token.email.matches(".*@snu\\.edu\\.in$");
+             request.auth.token.email.lower().matches(".*@snu\\.edu\\.in$");
     }
 
     // contact must be a bare 10-digit Indian mobile (starts 6-9). The form
@@ -27,7 +33,13 @@ service cloud.firestore {
       // Zomato/Swiggy orders must name an outlet — matching is per-outlet on
       // the marketplaces, so an outlet-less order there could never be clubbed
       // with anything.
+      //
+      // posterId must equal the caller's own uid — the one identity check that
+      // was missing here, and the client already always sends exactly this
+      // (posterId: myId, straight from the signed-in user), so tightening it
+      // costs nothing for anyone using the real app.
       allow create: if isStudent() &&
+                     request.resource.data.posterId == request.auth.uid &&
                      hasUsableContact() &&
                      isKnownApp() &&
                      request.resource.data.outlet is string &&
@@ -49,7 +61,7 @@ service cloud.firestore {
                      hasUsableContact() &&
                      isKnownApp();
 
-      allow delete: if request.auth != null &&
+      allow delete: if isStudent() &&
                      resource.data.posterId == request.auth.uid;
 
       match /joins/{joinerId} {
