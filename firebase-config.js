@@ -43,7 +43,12 @@ const firebaseConfig = {
   // sign-in with "Error 400: redirect_uri_mismatch". It was added there before
   // this value was changed. Firebase Hosting serves the /__/auth/* handler on
   // this domain automatically.
-  authDomain: "orderknot-snu.web.app",
+  // Whichever of our two Hosting domains the page was opened on, so sign-in is
+  // same-origin on both. Each has its /__/auth/handler in the OAuth client's
+  // Authorized redirect URIs. Anywhere else (localhost) falls back to web.app.
+  authDomain: ["orderknot-snu.web.app", "orderknot-snu.firebaseapp.com"].includes(location.hostname)
+    ? location.hostname
+    : "orderknot-snu.web.app",
   projectId: "orderknot-snu",
   storageBucket: "orderknot-snu.firebasestorage.app",
   messagingSenderId: "72262965540",
