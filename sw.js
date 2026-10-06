@@ -1,4 +1,4 @@
-const CACHE = "orderknot-v46";
+const CACHE = "orderknot-v47";
 const ASSETS = ["./", "index.html", "style.css", "app.js", "manifest.json", "logo.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {

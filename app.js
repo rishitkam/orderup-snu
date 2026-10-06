@@ -1,5 +1,5 @@
 import {
-  db, auth, googleProvider, ALLOWED_DOMAIN, persistenceState
+  db, auth, googleProvider, ALLOWED_DOMAIN, persistenceState, persistenceReady
 } from "./firebase-config.js";
 import {
   collection, addDoc, onSnapshot, deleteDoc, doc, setDoc, updateDoc,
@@ -415,7 +415,12 @@ googleSignInBtn.addEventListener("click", async () => {
 signOutBtn.addEventListener("click", () => signOut(auth));
 
 // completes the sign-in when the browser returns from the Google redirect
-getRedirectResult(auth).then((result) => {
+// Wait for setPersistence (started in firebase-config.js) to settle first.
+// Running both at once races: switching persistence while Firebase is still
+// restoring the redirect sign-in can drop the user, so iOS came back from
+// Google with an empty result. Persistence resolves in milliseconds, and
+// nothing here is inside a tap handler, so the wait costs nothing.
+persistenceReady.then(() => getRedirectResult(auth)).then((result) => {
   const startedAt = consumeRedirectStarted();
   if (result && result.user) {
     handleSignedInUser(result.user);
