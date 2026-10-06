@@ -7,7 +7,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   signInWithPopup, signInWithRedirect, getRedirectResult,
-  onAuthStateChanged, signOut
+  onAuthStateChanged, signOut, signInWithCredential, GoogleAuthProvider
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const ORDERS_COL = "orders";
@@ -304,7 +304,7 @@ function showDiag(reason) {
     "authDomain:  " + (auth.config && auth.config.authDomain),
     "page origin: " + location.origin,
     "same-origin: " + (auth.config && auth.config.authDomain === location.host ? "yes" : "NO <-- suspect"),
-    "flow:        " + (IS_IOS ? "redirect (iOS)" : "popup-first") + (IS_MOBILE ? " (mobile UA)" : " (desktop UA)"),
+    "flow:        " + (USE_GIS ? "google-identity (iOS)" : "popup-first") + (IS_MOBILE ? " (mobile UA)" : " (desktop UA)"),
     "standalone:  " + (window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true),
     "localStorage:" + storageProbe(),
     "persistence: " + (persistenceState.error ? persistenceState.error.code || String(persistenceState.error) : "ok"),
@@ -336,6 +336,49 @@ async function handleSignedInUser(user) {
   }
   // otherwise onAuthStateChanged below flips the UI over automatically
 }
+
+/* ---------------- iPhone sign-in ----------------
+   Both Firebase flows fail on iOS Safari: the popup loses track of its tab
+   (auth/popup-closed-by-user, auth/internal-error) and the redirect comes back
+   with an empty result, because Safari partitions the storage the handoff
+   needs. Google Identity Services runs its own popup and hands back a signed
+   ID token directly, which Firebase accepts via signInWithCredential — no
+   cross-site storage involved. Needs the page origin in the OAuth client's
+   "Authorized JavaScript origins". `?gis` forces this path for testing. */
+const GOOGLE_CLIENT_ID = "72262965540-ci08dc6mi6ul5k97utd04knqia215em5.apps.googleusercontent.com";
+const USE_GIS = (IS_IOS || new URLSearchParams(location.search).has("gis")) && !isInAppBrowser();
+
+function initGoogleIdentity(tries = 0) {
+  const gsi = window.google && window.google.accounts && window.google.accounts.id;
+  if (!gsi) {
+    // The GIS script loads async; give it ~10s before telling the user.
+    if (tries < 50) setTimeout(() => initGoogleIdentity(tries + 1), 200);
+    else { showLoginNote("Couldn't load Google sign-in. Check your connection and reload.", true); showDiag("GIS script never loaded"); }
+    return;
+  }
+  gsi.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    hd: ALLOWED_DOMAIN,              // nudges the account picker toward @snu.edu.in
+    ux_mode: "popup",
+    callback: async (resp) => {
+      showLoginNote("Signing you in…", false);
+      try {
+        const result = await signInWithCredential(auth, GoogleAuthProvider.credential(resp.credential));
+        await handleSignedInUser(result.user); // onAuthStateChanged flips the UI
+      } catch (err) {
+        console.error("[orderknot] GIS credential sign-in failed:", err);
+        showLoginNote("Couldn't sign in. Please try again.", true);
+        showDiag((err && err.code) || String(err));
+      }
+    }
+  });
+  const slot = document.getElementById("gisSlot");
+  const width = Math.min(400, Math.max(200, Math.round(googleSignInBtn.getBoundingClientRect().width) || 300));
+  gsi.renderButton(slot, { theme: "filled_black", size: "large", shape: "pill", text: "continue_with", width });
+  slot.hidden = false;
+  googleSignInBtn.hidden = true;
+}
+if (USE_GIS) initGoogleIdentity();
 
 googleSignInBtn.addEventListener("click", async () => {
   showLoginNote("Opening Google sign-in…", false);

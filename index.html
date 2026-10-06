@@ -31,6 +31,8 @@
   <!-- System font stack only: no web fonts to load, nothing to flash-of-
        unstyled-text while it fetches. -->
   <link rel="stylesheet" href="style.css" />
+  <!-- Google Identity Services: iPhone sign-in (see app.js, "iPhone sign-in") -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 
 <body>
@@ -68,6 +70,8 @@
         </svg>
         <span>Continue with Google</span>
       </button>
+
+      <div class="gis-slot" id="gisSlot" hidden></div>
 
       <p class="login-note" id="loginNote"></p>
 

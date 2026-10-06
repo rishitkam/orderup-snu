@@ -1361,3 +1361,6 @@ button:focus-visible, a:focus-visible {
   .match-row { flex-wrap: wrap; }
   .match-cta { width: 100%; }
 }
+
+/* Google Identity Services button (iPhone sign-in) — centred, same slot as .btn-google */
+.gis-slot { display: flex; justify-content: center; min-height: 44px; }
