@@ -2220,7 +2220,7 @@ function syncInstallHint() {
     installHintSub.textContent = "Opens like an app, one tap from anywhere.";
   } else if (show && IS_IOS && !isInAppBrowser()) {
     installBtn.hidden = true;
-    installHintSub.textContent = "Tap the Share button, then “Add to Home Screen”.";
+    installHintSub.textContent = "Tap Share, then “Add to Home Screen”. You’ll stay signed in.";
   } else if (show && IS_ANDROID && !isInAppBrowser()) {
     installBtn.hidden = true;
     installHintSub.textContent = "Tap the ⋮ menu, then “Add to Home screen” or “Install app”.";
