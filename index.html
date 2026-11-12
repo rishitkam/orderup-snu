@@ -7,7 +7,7 @@
   <title>OrderKnot: club your order, split the delivery</title>
   <meta name="description"
     content="Club your Blinkit, Zomato or Swiggy order with someone on campus. Hit the free-delivery minimum and unlock large-order promos together." />
-  <meta name="theme-color" id="themeColor" content="#f5f5f7" />
+  <meta name="theme-color" id="themeColor" content="#f2f2f7" />
 
   <!-- Runs before first paint deliberately: applying the stored theme from
        app.js instead would show a flash of the wrong background on every load. -->
@@ -20,7 +20,7 @@
         ? stored === "dark"
         : !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
       var m = document.getElementById("themeColor");
-      if (m) m.setAttribute("content", dark ? "#000000" : "#f5f5f7");
+      if (m) m.setAttribute("content", dark ? "#000000" : "#f2f2f7");
     })();
   </script>
 
@@ -37,25 +37,12 @@
 
 <body>
 
-  <!-- Ambient background: two large, heavily blurred colour fields drifting
-       very slowly behind everything. Purely decorative (aria-hidden, no
-       pointer events) — see the .ambient rules in style.css for why this is
-       safe against every card and every contrast check already done. -->
-  <div class="ambient" aria-hidden="true">
-    <span class="orb orb-a"></span>
-    <span class="orb orb-b"></span>
-    <span class="orb orb-c"></span>
-  </div>
-
   <!-- LOGIN GATE -->
   <div class="login-gate" id="loginGate">
     <div class="login-card">
-      <div class="brand login-brand">
-        <img class="brand-mark" src="logo.png" alt="" />
-        <span class="brand-name">OrderKnot</span>
-      </div>
-      <h1 class="login-title">SNU students only</h1>
-      <p class="login-sub" id="loginSub">Sign in with your @snu.edu.in Google account to see and post orders.</p>
+      <img class="login-mark" src="logo.png" alt="" />
+      <h1 class="login-title">OrderKnot</h1>
+      <p class="login-sub" id="loginSub">Club your Blinkit, Zomato or Swiggy order with someone on campus and split the delivery.</p>
 
       <button type="button" class="btn-google" id="googleSignInBtn">
         <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
@@ -72,6 +59,8 @@
       </button>
 
       <div class="gis-slot" id="gisSlot" hidden></div>
+
+      <p class="login-caption">Use your @snu.edu.in Google account.</p>
 
       <p class="login-note" id="loginNote"></p>
 
@@ -95,31 +84,53 @@
   <!-- MAIN APP (hidden until signed in) -->
   <div id="appRoot" hidden>
 
-    <header class="topbar">
+    <header class="topbar" id="topbar">
       <div class="wrap topbar-inner">
         <a class="brand" href="#">
           <img class="brand-mark" src="logo.png" alt="" />
-        <span class="brand-name">OrderKnot</span>
+          <span class="brand-name">OrderKnot</span>
         </a>
-        <div class="whoami" id="whoami">
-          <span class="whoami-email" id="whoamiEmail"></span>
+        <div class="topbar-actions">
           <button class="icon-btn" id="themeToggle" type="button" aria-label="Switch to dark mode">
             <span id="themeToggleIcon" aria-hidden="true"></span>
           </button>
-          <button class="whoami-name" id="signOutBtn">sign out</button>
+          <button class="text-btn" id="signOutBtn" type="button">Sign out</button>
         </div>
       </div>
     </header>
 
-
     <main class="wrap">
 
-      <section class="hero">
-        <p class="eyebrow">Club your delivery carts</p>
-        <h1 class="hero-title">Nobody should pay<br /><span class="hero-accent">delivery</span> alone.</h1>
+      <!-- The page title is the board's own name. Sort sits beside it: it's
+           something you reach for while browsing, not a filter you set once. -->
+      <section class="board-controls">
+        <h1 class="board-heading" id="boardHeading"></h1>
+        <label class="sort-pill">
+          <select id="sSort" aria-label="Sort orders">
+            <option value="match">Best match</option>
+            <option value="soonest">Closing soonest</option>
+            <option value="lowest">Least ₹ needed</option>
+          </select>
+        </label>
       </section>
 
-      <!-- APP FILTER BUBBLES -->
+      <section class="search-row">
+        <div class="search-main" id="searchBar">
+          <span class="search-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" focusable="false">
+              <circle cx="10.5" cy="10.5" r="6.4" fill="none" stroke="currentColor" stroke-width="2" />
+              <path d="M15.4 15.4 21 21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            </svg>
+          </span>
+          <input type="search" id="sQuery" autocomplete="off" enterkeyhint="search" placeholder="Search"
+            aria-label="Search outlets or items" />
+          <button type="button" class="search-clear" id="clearSearch" aria-label="Clear search">×</button>
+        </div>
+        <button type="button" class="icon-btn" id="filterToggle" aria-label="Filters" aria-expanded="false">
+          <span class="tool-dot" id="filterDot" hidden></span>
+        </button>
+      </section>
+
       <section class="filter-strip">
         <div class="filter-tabs" id="filterTabs" role="tablist" aria-label="Filter orders by app">
           <button class="filter-tab filter-tab-all" data-filter="all" role="tab">
@@ -140,57 +151,10 @@
         </div>
       </section>
 
-      <section class="board-controls">
-        <p class="board-heading" id="boardHeading"></p>
-        <div class="board-tools">
-          <button type="button" class="icon-btn" id="searchToggle" aria-label="Search" aria-expanded="false"></button>
-          <button type="button" class="icon-btn" id="filterToggle" aria-label="Filters" aria-expanded="false">
-            <span class="tool-dot" id="filterDot" hidden></span>
-          </button>
-          <button class="btn btn-primary" id="openPostModal">
-            <span>+ Post<span class="btn-long"> an order</span></span>
-          </button>
-        </div>
-      </section>
-
-      <!-- Sort lives outside the filter panel: it's something you reach for
-           while browsing, not a filter you set once and forget. -->
-      <section class="sort-row">
-        <label class="sort-pill">
-          <span class="sort-pill-label">Sort</span>
-          <select id="sSort" aria-label="Sort orders">
-            <option value="match">best match</option>
-            <option value="soonest">closing soonest</option>
-            <option value="lowest">least ₹ needed</option>
-          </select>
-        </label>
-      </section>
-
-      <!-- Both collapsed by default. Shown all the time they crowded out the
-           board, which is the thing people actually came for.
-
-           No `hidden` attribute here — [hidden] means display:none, and a
-           display swap can't be animated. Openness is the .open class alone,
-           driven by a grid-template-rows 0fr/1fr collapse in style.css, and
-           `inert` keeps a collapsed panel's inputs out of tab order and out
-           of reach of anything that would otherwise still find them at
-           zero height. -->
-      <section class="tool-panel" id="searchPanel" inert>
-        <div class="tool-panel-inner">
-          <div class="search-main" id="searchBar">
-            <span class="search-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="17" height="17" focusable="false">
-                <circle cx="10.5" cy="10.5" r="6.4" fill="none" stroke="currentColor" stroke-width="2" />
-                <path d="M15.4 15.4 21 21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-              </svg>
-            </span>
-            <input type="search" id="sQuery" autocomplete="off" placeholder="Search outlets or items…"
-              aria-label="Search outlets or items" />
-            <button type="button" class="search-clear" id="clearSearch" title="Clear search">×</button>
-          </div>
-        </div>
-      </section>
-
+      <!-- Collapsed by default. No `hidden` attribute here — [hidden] means
+           display:none, and a display swap can't be animated. Openness is the
+           .open class alone, and `inert` keeps a collapsed panel's inputs out
+           of tab order. -->
       <section class="tool-panel" id="filterPanel" inert>
         <div class="tool-panel-inner">
           <label class="field filter-location">
@@ -200,12 +164,12 @@
           <div class="search-filters">
             <label class="field">
               <span class="field-label">Your cart ₹</span>
-              <input type="number" id="sMyValue" min="0" step="1" placeholder="250" />
+              <input type="number" id="sMyValue" inputmode="numeric" min="0" step="1" placeholder="250" />
             </label>
             <label class="field">
-              <span class="field-label">Within</span>
+              <span class="field-label">Closing within</span>
               <select id="sMaxTime">
-                <option value="0">any time</option>
+                <option value="0">Any time</option>
                 <option value="15">15 min</option>
                 <option value="30">30 min</option>
                 <option value="60">1 hr</option>
@@ -221,18 +185,29 @@
         <!-- order cards injected here -->
       </section>
 
-      <p class="empty-state" id="emptyState" hidden>
-        Nothing here right now. Be the first to post what you're ordering.
-      </p>
+      <div class="empty-state" id="emptyState" hidden>
+        <p class="empty-title">No orders here yet</p>
+        <p class="empty-sub">Post yours and anyone on campus can join in.</p>
+      </div>
 
     </main>
 
     <footer class="footer">
       <div class="wrap">
-        <p>Orders auto-clear after they expire. Be a decent human, actually place the order together, split it fairly.
-        </p>
+        <p>Orders clear on their own once they close.</p>
+        <p>Signed in as <span id="whoamiEmail"></span></p>
       </div>
     </footer>
+
+    <!-- The one primary action, floating in thumb reach. -->
+    <div class="post-dock">
+      <button class="btn btn-primary" id="openPostModal" type="button">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+          <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
+        </svg>
+        <span>Post an order</span>
+      </button>
+    </div>
 
   </div><!-- /#appRoot -->
 
@@ -281,22 +256,22 @@
 
         <div class="field-row">
           <label class="field">
-            <span class="field-label">Your cart so far (₹)</span>
-            <input type="number" id="fCurrent" min="0" step="1" required placeholder="e.g. 250" />
-            <span class="field-hint">Used to find your matches.</span>
-          </label>
+            <span class="field-label">Cart so far (₹)</span>
+            <input type="number" id="fCurrent" min="0" step="1" required inputmode="numeric" placeholder="250" />
+                      </label>
           <label class="field">
-            <span class="field-label">Extra ₹ still needed</span>
-            <input type="number" id="fTarget" min="1" step="1" required placeholder="79" />
+            <span class="field-label">Still needed (₹)</span>
+            <input type="number" id="fTarget" min="1" step="1" required inputmode="numeric" placeholder="79" />
           </label>
         </div>
 
+        <label class="field">
+          <span class="field-label">Drop location</span>
+          <select id="fLocation" required></select>
+          <span class="field-hint" id="locationHint" hidden>Remembered from last time.</span>
+        </label>
+
         <div class="field-row">
-          <label class="field">
-            <span class="field-label">Drop location</span>
-            <select id="fLocation" required></select>
-            <span class="field-hint" id="locationHint" hidden>Remembered from last time. Edit any time.</span>
-          </label>
           <label class="field">
             <span class="field-label">Closes in</span>
             <select id="fExpiry">
@@ -304,18 +279,16 @@
               <option value="30" selected>30 min</option>
               <option value="60">1 hour</option>
               <option value="120">2 hours</option>
-              <option value="day">at midnight (all day)</option>
+              <option value="day">At midnight</option>
             </select>
           </label>
+          <label class="field">
+            <span class="field-label">WhatsApp number</span>
+            <input type="tel" id="fContact" inputmode="numeric" autocomplete="tel-national" maxlength="15"
+              placeholder="9876543210" required />
+          </label>
         </div>
-
-        <label class="field">
-          <span class="field-label">Your WhatsApp number</span>
-          <input type="tel" id="fContact" inputmode="numeric" autocomplete="tel-national" maxlength="15"
-            placeholder="9876543210" required />
-          <span class="field-hint">10-digit mobile number only. That's how people reach you.</span>
-          <span class="field-hint" id="contactHint" hidden>Remembered from last time. Edit any time.</span>
-        </label>
+        <p class="form-note">Your number is shown only to people who tap I’m in.<span id="contactHint" hidden></span></p>
 
         <button type="submit" class="btn btn-primary btn-block">Post to the board</button>
       </form>

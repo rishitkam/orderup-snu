@@ -122,7 +122,7 @@ function populatePickupSelect(sel, placeholder) {
 
 // A plain line-icon pin, replacing the pin emoji that used to sit in front of
 // the drop location on every card — same reasoning as the theme toggle icons.
-const ICON_PIN = `<svg viewBox="0 0 24 24" width="12" height="12" focusable="false" aria-hidden="true">
+const ICON_PIN = `<svg viewBox="0 0 24 24" width="14" height="14" focusable="false" aria-hidden="true">
   <path fill="currentColor" d="M12 2c-4 0-7 3-7 7 0 5.2 6 12.3 6.3 12.6a1 1 0 0 0 1.4 0C13 21.3 19 14.2 19 9c0-4-3-7-7-7zm0 9.6A2.6 2.6 0 1 1 12 6.4a2.6 2.6 0 0 1 0 5.2z"/>
 </svg>`;
 
@@ -595,9 +595,7 @@ let latestOrders = [];
 
 /* ---------------- search ---------------- */
 const searchBar = document.getElementById("searchBar");
-const searchPanel = document.getElementById("searchPanel");
 const filterPanel = document.getElementById("filterPanel");
-const searchToggle = document.getElementById("searchToggle");
 const filterToggle = document.getElementById("filterToggle");
 const filterDot = document.getElementById("filterDot");
 const clearFiltersBtn = document.getElementById("clearFilters");
@@ -619,16 +617,14 @@ clearSearchBtn.addEventListener("click", () => {
   sQuery.focus();
 });
 
-/* ---------------- search & filter panels ----------------
-   Kept collapsed by default: shown permanently they pushed the board below
-   the fold, and the board is the whole product. */
-const ICON_SEARCH = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" style="width:17px;height:17px">
-  <circle cx="10.5" cy="10.5" r="6.4" fill="none" stroke="currentColor" stroke-width="2"/>
-  <path d="M15.4 15.4 21 21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
-const ICON_FILTER = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" style="width:17px;height:17px">
-  <path fill="currentColor" d="M3.6 5.3A1 1 0 0 1 4.5 4h15a1 1 0 0 1 .78 1.63l-5.78 7.2v5.3a1 1 0 0 1-1.45.9l-3-1.5a1 1 0 0 1-.55-.9v-3.8L3.72 5.63a1 1 0 0 1-.12-.33z"/></svg>`;
+/* ---------------- filter panel ----------------
+   Search is always on screen; the filters stay collapsed by default, because
+   shown permanently they pushed the board below the fold. */
+const ICON_FILTER = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+  <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4 7h16M7 12h10M10 17h4"/></svg>`;
+const ICON_SHARE = `<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" focusable="false">
+  <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 15V3.5M7.5 7.5 12 3l4.500 4.500M6 11.500H5a1 1 0 0 0-1 1V20a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7.500a1 1 0 0 0-1-1h-1"/></svg>`;
 
-searchToggle.insertAdjacentHTML("afterbegin", ICON_SEARCH);
 filterToggle.insertAdjacentHTML("afterbegin", ICON_FILTER);
 
 function togglePanel(panel, btn, open) {
@@ -643,10 +639,6 @@ function togglePanel(panel, btn, open) {
   btn.classList.toggle("on", show);
 }
 
-searchToggle.addEventListener("click", () => {
-  togglePanel(searchPanel, searchToggle);
-  if (searchPanel.classList.contains("open")) sQuery.focus();
-});
 filterToggle.addEventListener("click", () => togglePanel(filterPanel, filterToggle));
 
 clearFiltersBtn.addEventListener("click", () => {
@@ -688,12 +680,12 @@ function resolvedTheme() {
 // Line-icon sun/moon rather than the emoji glyphs this used to hold — those
 // render as full-colour pictures on Android and inconsistently everywhere
 // else, which reads as decoration rather than as a control.
-const ICON_SUN = `<svg viewBox="0 0 24 24" width="15" height="15" focusable="false">
+const ICON_SUN = `<svg viewBox="0 0 24 24" width="20" height="20" focusable="false">
   <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
   <path stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
     d="M12 2.5v2.4M12 19.1v2.4M21.5 12h-2.4M4.9 12H2.5M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7M18.4 18.4l-1.7-1.7M7.3 7.3 5.6 5.6"/>
 </svg>`;
-const ICON_MOON = `<svg viewBox="0 0 24 24" width="15" height="15" focusable="false">
+const ICON_MOON = `<svg viewBox="0 0 24 24" width="19" height="19" focusable="false">
   <path fill="currentColor" d="M20.3 14.6A8.6 8.6 0 1 1 9.4 3.7a7 7 0 0 0 10.9 10.9z"/>
 </svg>`;
 
@@ -702,7 +694,7 @@ function applyTheme(theme) {
   else delete document.documentElement.dataset.theme;
 
   const dark = resolvedTheme() === "dark";
-  if (themeColorMeta) themeColorMeta.setAttribute("content", dark ? "#000000" : "#f5f5f7");
+  if (themeColorMeta) themeColorMeta.setAttribute("content", dark ? "#000000" : "#f2f2f7");
   if (themeToggleIcon) themeToggleIcon.innerHTML = dark ? ICON_SUN : ICON_MOON;
   if (themeToggle) {
     themeToggle.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
@@ -900,8 +892,71 @@ postForm.addEventListener("input", clearFieldErrors);
 postForm.addEventListener("change", clearFieldErrors);
 
 /* ---------------- modal helpers ---------------- */
-function openModal(el) { el.classList.add("open"); }
-function closeModal(el) { el.classList.remove("open"); }
+function syncSheetOpen() {
+  document.documentElement.classList.toggle("sheet-open", !!document.querySelector(".modal-backdrop.open"));
+}
+function openModal(el) {
+  el.classList.add("open");
+  const sheet = el.querySelector(".modal");
+  if (sheet) sheet.scrollTop = 0;
+  syncSheetOpen();
+}
+function closeModal(el) { el.classList.remove("open"); syncSheetOpen(); }
+
+/* Drag a sheet down by its header to dismiss it.
+
+   The sheet tracks the finger 1:1 while it's held, resists (rather than
+   stops dead) if pulled upward, and on release decides from where the
+   gesture was GOING, not just where it stopped: a short fast flick dismisses,
+   a long slow drag that's let go near the top settles back. Clearing the
+   inline transform hands the rest to the CSS transition, which starts from
+   wherever the sheet currently is — so there's no jump at the handoff.
+   Phones only: on a wide screen the same markup is a centred dialog. */
+function enableSheetDrag(backdrop, close) {
+  const sheet = backdrop.querySelector(".modal");
+  const handle = sheet.querySelector(".modal-head");
+  const wide = window.matchMedia("(min-width: 560px)");
+  let dragging = false, startY = 0, lastY = 0, lastT = 0, velocity = 0;
+
+  const rubberband = (over, dim) => (over * dim * 0.55) / (dim + 0.55 * over);
+
+  handle.addEventListener("pointerdown", (e) => {
+    if (wide.matches || e.target.closest("button")) return;
+    dragging = true;
+    startY = lastY = e.clientY;
+    lastT = e.timeStamp;
+    velocity = 0;
+    try { handle.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
+    sheet.style.transition = "none";
+  });
+  handle.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const dt = e.timeStamp - lastT;
+    // Sample over at least a frame: two events a fraction of a millisecond
+    // apart would otherwise read as an enormous flick.
+    if (dt >= 8) {
+      velocity = (e.clientY - lastY) / dt * 1000; // px/s
+      lastY = e.clientY;
+      lastT = e.timeStamp;
+    }
+    const dy = e.clientY - startY;
+    const y = dy >= 0 ? dy : -rubberband(-dy, sheet.offsetHeight);
+    sheet.style.transform = `translateY(${y}px)`;
+  });
+  const release = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    const dy = e.clientY - startY;
+    if (e.timeStamp - lastT > 100) velocity = 0; // finger came to rest before lifting
+    // Same exponential-decay projection scroll views use to pick a landing point.
+    const projected = dy + (velocity / 1000) * 0.99 / (1 - 0.99);
+    sheet.style.transition = "";
+    sheet.style.transform = "";
+    if (e.type === "pointerup" && projected > sheet.offsetHeight * 0.4) close();
+  };
+  handle.addEventListener("pointerup", release);
+  handle.addEventListener("pointercancel", release);
+}
 
 /* ---------------- filter tabs ---------------- */
 function applyFilterUI() {
@@ -1196,6 +1251,14 @@ matchModalBackdrop.addEventListener("click", (e) => {
   if (e.target === matchModalBackdrop) closeModal(matchModalBackdrop);
 });
 
+enableSheetDrag(postModalBackdrop, closePostModal);
+enableSheetDrag(matchModalBackdrop, () => closeModal(matchModalBackdrop));
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (matchModalBackdrop.classList.contains("open")) closeModal(matchModalBackdrop);
+  else if (postModalBackdrop.classList.contains("open")) closePostModal();
+});
+
 /* ---------------- post order ---------------- */
 postForm.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -1336,10 +1399,10 @@ function matchRowHTML(m, against) {
           ${mutual ? '<span class="mutual-badge">you both benefit</span>' : ""}
         </div>
         <div class="match-row-sub">
-          needs ₹${Number(m.target) || 0} · cart ₹${Number(m.current) || 0} · ${label} · ${escapeHtml(m.location || "")}
+          Needs ₹${Number(m.target) || 0} · cart ₹${Number(m.current) || 0} · ${label} · ${escapeHtml(m.location || "")}
         </div>
       </div>
-      <button type="button" class="btn btn-primary match-cta" data-reveal="${escapeHtml(m.id)}">I'm in</button>
+      <button type="button" class="btn btn-tinted match-cta" data-reveal="${escapeHtml(m.id)}">I’m in</button>
     </div>`;
 }
 
@@ -1467,14 +1530,6 @@ function timeLeftLabel(expiresAt) {
   return { label: `${hrs}h ${mins % 60}m left`, urgent: false };
 }
 
-function amountBlock(needed) {
-  return `
-    <div class="amount-block">
-      <span class="amount-value">₹${needed}</span>
-      <span class="amount-caption">needed</span>
-    </div>`;
-}
-
 function cardInnerHTML(o, myValue, pool) {
   const current = Number(o.current) || 0;
   const needed = Number(o.target) || 0;
@@ -1487,43 +1542,48 @@ function cardInnerHTML(o, myValue, pool) {
   // into a wall of nested lists.
   const matches = isMine ? matchesFor(o, pool) : [];
 
+  // The outlet is the headline when there is one (the mark already says which
+  // app); otherwise the app name is.
+  const title = o.outlet || o.app;
+  const sub = [
+    o.outlet ? o.app : "",
+    isMine ? "You" : (o.posterName || "someone")
+  ].filter(Boolean).map(escapeHtml).join(" · ");
+  const where = [o.location, current > 0 ? `cart ₹${current}` : ""].filter(Boolean).map(escapeHtml).join(" · ");
+
   return `
-      ${amountBlock(needed)}
-      <div class="card-body">
-        <div class="card-top">
-          <span class="card-app">
-            <span class="app-dot" data-app="${escapeHtml(o.app)}">${appIconHTML(o.app)}</span>
-            <span>${escapeHtml(o.app)}</span>
-            ${o.outlet ? `<span class="card-outlet">${escapeHtml(o.outlet)}</span>` : ""}
-            ${isGoodMatch ? '<span class="match-badge">fits your cart</span>' : ""}
-          </span>
-          <span class="card-timer ${urgent ? "urgent" : ""}">${label}</span>
+      <div class="card-main">
+        <span class="app-dot app-dot-lg" data-app="${escapeHtml(o.app)}" aria-hidden="true">${appIconHTML(o.app)}</span>
+        <div class="card-text">
+          <div class="card-title">${escapeHtml(title)}</div>
+          <div class="card-sub">${sub}</div>
         </div>
-        <div class="card-amounts">
-          ${current > 0 ? `cart's at <b>₹${current}</b> · ` : ""}needs <b>₹${needed}</b> more
+        <div class="card-amount">
+          <span class="amount-value">₹${needed}</span>
+          <span class="amount-caption">${isGoodMatch ? "fits your cart" : "needed"}</span>
         </div>
-        ${o.items ? `<p class="card-items">${escapeHtml(o.items)}</p>` : ""}
-        <div class="card-meta">
-          <span class="card-loc">${ICON_PIN}${escapeHtml(o.location)}</span>
-          <span class="card-poster">by <b>${escapeHtml(o.posterName || "someone")}</b></span>
-        </div>
-        <div class="card-actions">
-          ${isMine
-      ? `<button class="btn-ghost" data-edit="${escapeHtml(o.id)}">Edit</button>
-             <button class="btn-ghost" data-extend="${escapeHtml(o.id)}">+15 min</button>
-             <button class="btn-ghost" data-share="${escapeHtml(o.id)}">Share</button>
-             <button class="btn-ghost btn-danger" data-remove="${escapeHtml(o.id)}">Remove</button>`
-      : `<button class="btn-ghost" data-join="${escapeHtml(o.id)}">I'm in (show contact)</button>
-             <button class="btn-ghost" data-share="${escapeHtml(o.id)}">Share</button>`
-    }
-        </div>
-        <div class="contact-slot"></div>
-        ${matches.length ? `
-        <details class="card-matches">
-          <summary>${matches.length} ${matches.length === 1 ? "match" : "matches"} for your order</summary>
-          <div class="match-list">${matches.map(m => matchRowHTML(m, o)).join("")}</div>
-        </details>` : ""}
       </div>
+      ${o.items ? `<p class="card-items">${escapeHtml(o.items)}</p>` : ""}
+      <div class="card-meta">
+        <span class="card-loc">${ICON_PIN}<span>${where}</span></span>
+        <span class="card-timer ${urgent ? "urgent" : ""}">${label}</span>
+      </div>
+      <div class="card-actions">
+        ${isMine
+      ? `<button class="btn-ghost" data-edit="${escapeHtml(o.id)}">Edit</button>
+           <button class="btn-ghost" data-extend="${escapeHtml(o.id)}">+15 min</button>
+           <button class="btn-ghost btn-danger" data-remove="${escapeHtml(o.id)}">Remove</button>
+           <button class="btn-ghost btn-icon" data-share="${escapeHtml(o.id)}" aria-label="Share">${ICON_SHARE}</button>`
+      : `<button class="btn btn-tinted" data-join="${escapeHtml(o.id)}">I’m in</button>
+           <button class="btn-ghost btn-icon" data-share="${escapeHtml(o.id)}" aria-label="Share">${ICON_SHARE}</button>`
+    }
+      </div>
+      <div class="contact-slot"></div>
+      ${matches.length ? `
+      <details class="card-matches">
+        <summary>${matches.length} ${matches.length === 1 ? "match" : "matches"} for your order</summary>
+        <div class="match-list">${matches.map(m => matchRowHTML(m, o)).join("")}</div>
+      </details>` : ""}
   `;
 }
 
@@ -1543,18 +1603,30 @@ async function recordJoin(o) {
 
 function revealContactInto(slot, o) {
   const waDigits = extractWhatsAppDigits(o.contact);
-  let html = `<div class="contact-reveal">Reach out: ${escapeHtml(o.contact)}</div>`;
+  let html = `<div class="contact-reveal"><span>Reach out</span><b>${escapeHtml(o.contact)}</b></div>`;
   if (waDigits) {
     html += `<a class="btn btn-primary btn-block wa-link" href="${buildWhatsAppLink(waDigits, o)}" target="_blank" rel="noopener">Message on WhatsApp</a>`;
   }
   slot.innerHTML = html;
 }
 
+// Orders whose contact this person has already revealed. A card's HTML is
+// rebuilt whenever its countdown label changes, which used to wipe the
+// revealed number off the card a minute after it was shown.
+const revealedOrders = new Set();
+
 function wireCardEvents(el, o, pool) {
   const joinBtn = el.querySelector("[data-join]");
-  if (joinBtn) {
+  if (joinBtn && revealedOrders.has(o.id)) {
+    const slot = el.querySelector(".contact-slot");
+    slot.classList.add("no-anim"); // restoring, not revealing — don't replay the entrance
+    revealContactInto(slot, o);
+    joinBtn.disabled = true;
+    joinBtn.textContent = "Contact revealed";
+  } else if (joinBtn) {
     joinBtn.addEventListener("click", () => {
       joinBtn.disabled = true;
+      revealedOrders.add(o.id);
       // Reveal FIRST, and never await the join write.
       //
       // The contact is already in the order document we're rendering — showing
@@ -1564,7 +1636,7 @@ function wireCardEvents(el, o, pool) {
       // record is bookkeeping for a future notification; it must never gate
       // the thing the user actually pressed the button for.
       revealContactInto(el.querySelector(".contact-slot"), o);
-      joinBtn.textContent = "Contact revealed ✓";
+      joinBtn.textContent = "Contact revealed";
       recordJoin(o); // fire-and-forget; it logs its own failures
     });
   }
@@ -1760,7 +1832,7 @@ function render() {
     el.style.transform = `translate(${dx}px, ${dy}px)`;
     el.getBoundingClientRect(); // force layout so the browser commits the starting position
     requestAnimationFrame(() => {
-      el.style.transition = "transform 0.42s cubic-bezier(0.25, 0.1, 0.25, 1)";
+      el.style.transition = "transform 0.42s cubic-bezier(0.32, 0.72, 0, 1)";
       el.style.transform = "";
       el.addEventListener("transitionend", () => { el.style.transition = ""; }, { once: true });
     });
@@ -1836,6 +1908,12 @@ function escapeHtml(str) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   }[m]));
 }
+
+/* The top bar's hairline only shows once the board is scrolled under it. */
+const topbar = document.getElementById("topbar");
+const syncTopbar = () => topbar.classList.toggle("scrolled", window.scrollY > 4);
+window.addEventListener("scroll", syncTopbar, { passive: true });
+syncTopbar();
 
 /* tick every 30s so countdown labels + expiry cleanup stay fresh */
 setInterval(render, 30000);
