@@ -5,7 +5,9 @@
       "firebase.json",
       "**/.*",
       "**/node_modules/**",
-      "things/**"
+      "things/**",
+      "post/**",
+      "skills-lock.json"
     ],
     "headers": [
       {
