@@ -24,6 +24,20 @@
     })();
   </script>
 
+  <!-- Link preview for WhatsApp groups, which is how orders actually travel.
+       The image URL must be absolute; previews are fetched by WhatsApp's
+       servers, which don't run the page's script. -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="OrderKnot" />
+  <meta property="og:title" content="OrderKnot: split the delivery on campus" />
+  <meta property="og:description"
+    content="Someone at SNU needs a little more in their cart. Club your Blinkit, Zomato or Swiggy order and skip the delivery fee." />
+  <meta property="og:url" content="https://orderknot-snu.web.app/" />
+  <meta property="og:image" content="https://orderknot-snu.web.app/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="logo.png" />
   <link rel="apple-touch-icon" href="icon-512.png" />
@@ -180,6 +194,19 @@
           <button type="button" class="btn-ghost btn-block" id="clearFilters">Clear filters</button>
         </div>
       </section>
+
+      <!-- Shown from the second visit, never inside the installed app. On
+           Android the button triggers the browser's own install dialog; iOS
+           has no such API, so there it explains the two taps instead. -->
+      <div class="install-hint" id="installHint" hidden>
+        <img src="logo.png" alt="" />
+        <div class="install-text">
+          <b>Add OrderKnot to your home screen</b>
+          <span id="installHintSub">Opens like an app, one tap from anywhere.</span>
+        </div>
+        <button type="button" class="btn btn-tinted" id="installBtn" hidden>Add</button>
+        <button type="button" class="modal-close" id="installDismiss" aria-label="Dismiss">×</button>
+      </div>
 
       <section class="board" id="board">
         <!-- order cards injected here -->

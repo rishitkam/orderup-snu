@@ -22,6 +22,13 @@ service cloud.firestore {
              request.resource.data.contact.matches("^[6-9][0-9]{9}$");
     }
 
+    // The number no longer lives on the order itself (see /private below).
+    // Orders from before that change, and any client still running the old
+    // code, may carry one — that's tolerated, but it must still be usable.
+    function contactAbsentOrUsable() {
+      return !("contact" in request.resource.data) || hasUsableContact();
+    }
+
     function isKnownApp() {
       return request.resource.data.app in ["Blinkit", "Zomato", "Swiggy"];
     }
@@ -40,7 +47,7 @@ service cloud.firestore {
       // costs nothing for anyone using the real app.
       allow create: if isStudent() &&
                      request.resource.data.posterId == request.auth.uid &&
-                     hasUsableContact() &&
+                     contactAbsentOrUsable() &&
                      isKnownApp() &&
                      request.resource.data.outlet is string &&
                      request.resource.data.current is number &&
@@ -58,14 +65,38 @@ service cloud.firestore {
       allow update: if isStudent() &&
                      resource.data.posterId == request.auth.uid &&
                      request.resource.data.posterId == resource.data.posterId &&
-                     hasUsableContact() &&
+                     contactAbsentOrUsable() &&
                      isKnownApp();
 
       allow delete: if isStudent() &&
                      resource.data.posterId == request.auth.uid;
 
+      // The poster's phone number. Kept out of the order document because
+      // every signed-in student can read every order; this can be read only
+      // by the poster, and by someone who has actually tapped "I'm in"
+      // (which is what writes their /joins doc).
+      match /private/{docId} {
+        allow read: if isStudent() &&
+                     exists(/databases/$(database)/documents/orders/$(orderId)) &&
+                     (get(/databases/$(database)/documents/orders/$(orderId)).data.posterId == request.auth.uid ||
+                      exists(/databases/$(database)/documents/orders/$(orderId)/joins/$(request.auth.uid)));
+
+        // getAfter, not get: the order and its number are written in one
+        // batch, so on create the order doesn't exist yet from get()'s view.
+        allow create, update: if isStudent() &&
+                     docId == "contact" &&
+                     getAfter(/databases/$(database)/documents/orders/$(orderId)).data.posterId == request.auth.uid &&
+                     request.resource.data.keys().hasOnly(["contact"]) &&
+                     hasUsableContact();
+
+        allow delete: if isStudent() &&
+                     get(/databases/$(database)/documents/orders/$(orderId)).data.posterId == request.auth.uid;
+      }
+
       match /joins/{joinerId} {
-        allow create: if isStudent() && request.auth.uid == joinerId;
+        // update as well as create: tapping "I'm in" again after a reload
+        // rewrites the same doc.
+        allow create, update: if isStudent() && request.auth.uid == joinerId;
 
         allow read: if isStudent() &&
                      (request.auth.uid == joinerId ||

@@ -2,8 +2,8 @@ import {
   db, auth, googleProvider, ALLOWED_DOMAIN, persistenceState, persistenceReady
 } from "./firebase-config.js";
 import {
-  collection, addDoc, onSnapshot, deleteDoc, doc, setDoc, updateDoc,
-  serverTimestamp, query, orderBy, limit
+  collection, onSnapshot, deleteDoc, doc, setDoc, getDoc, updateDoc,
+  serverTimestamp, query, orderBy, limit, writeBatch, deleteField
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   signInWithPopup, signInWithRedirect, getRedirectResult,
@@ -1161,7 +1161,12 @@ function openPostModal(order) {
 
   if (order) {
     // Editing: every field comes from the order itself, not from saved defaults.
-    fContact.value = order.contact || "";
+    // The number lives in a private doc now. Fill from what this device
+    // already knows, then correct it from the server if that differs.
+    fContact.value = order.contact || knownContacts.get(order.id) || normalizePhone(getSavedContact()) || "";
+    getDoc(contactRef(order.id)).then(snap => {
+      if (snap.exists() && editingOrderId === order.id) fContact.value = snap.data().contact || fContact.value;
+    }).catch(() => { /* offline: the saved number stands */ });
     // Orders posted before pickup points existed carry free text that isn't in
     // the list; leave the placeholder showing rather than silently reassigning
     // them to whichever option happens to be first.
@@ -1305,13 +1310,14 @@ postForm.addEventListener("submit", async (e) => {
   const location = document.getElementById("fLocation").value.trim();
   const expiryVal = document.getElementById("fExpiry").value;
 
+  // No contact in here: every student can read every order, so the number
+  // goes in its own doc that only people who tap "I'm in" can read.
   const payload = {
     app: appVal,
     outlet,
     current,
     target,
     location,
-    contact,
     posterId: myId,
     posterName: getMyName(),
     posterEmail: myEmail,
@@ -1328,13 +1334,21 @@ postForm.addEventListener("submit", async (e) => {
     // before closing the modal is what made "Post" look broken on a phone: the
     // order was saved and already on the board, but the UI sat there waiting
     // for a round trip that can take a very long time on a weak connection.
-    const write = isEdit
+    // One batch, so an order can never land without its number or vice versa.
+    const orderRef = isEdit ? doc(db, ORDERS_COL, editingOrderId) : doc(collection(db, ORDERS_COL));
+    const batch = writeBatch(db);
+    if (isEdit) {
       // createdAt is left alone — editing shouldn't jump the order back to
-      // the top of the board.
-      ? updateDoc(doc(db, ORDERS_COL, editingOrderId), payload)
-      : addDoc(collection(db, ORDERS_COL), { ...payload, createdAt: serverTimestamp() });
+      // the top of the board. deleteField strips the number off orders that
+      // were posted before it moved out of the order document.
+      batch.update(orderRef, { ...payload, contact: deleteField() });
+    } else {
+      batch.set(orderRef, { ...payload, createdAt: serverTimestamp() });
+    }
+    batch.set(contactRef(orderRef.id), { contact });
+    knownContacts.set(orderRef.id, contact);
 
-    write.catch((err) => {
+    batch.commit().catch((err) => {
       toast(`Couldn't save: ${describeWriteError(err)}`, 4000);
     });
 
@@ -1412,14 +1426,20 @@ function wireMatchRows(container, orders) {
     btn.addEventListener("click", async () => {
       btn.disabled = true;
       btn.textContent = "…";
-      await recordJoin(order);
+      const contact = await joinAndGetContact(order);
+      if (!btn.isConnected) return; // the list was rebuilt while we waited
+      if (!contact) {
+        btn.disabled = false;
+        btn.textContent = "I’m in";
+        return;
+      }
       const row = btn.closest(".match-row");
       btn.remove();
       const slot = document.createElement("div");
+      slot.className = "contact-slot";
       slot.style.width = "100%";
-      revealContactInto(slot, order);
+      revealContactInto(slot, order, contact);
       row.appendChild(slot);
-      row.style.flexWrap = "wrap";
     });
   });
 }
@@ -1476,6 +1496,7 @@ function detachOrdersListener() {
 
 function stopOrdersListener() {
   detachOrdersListener();
+  stopJoinListeners();
   listenerRetry = 0;
   latestOrders = [];
 }
@@ -1537,6 +1558,7 @@ function cardInnerHTML(o, myValue, pool) {
   // are their business — and surfacing them on every card turned the board
   // into a wall of nested lists.
   const matches = isMine ? matchesFor(o, pool) : [];
+  const joined = isMine ? (joinsByOrder.get(o.id) || []) : [];
 
   // The outlet is the headline when there is one (the mark already says which
   // app); otherwise the app name is.
@@ -1564,12 +1586,17 @@ function cardInnerHTML(o, myValue, pool) {
         <span class="card-loc">${ICON_PIN}<span>${where}</span></span>
         <span class="card-timer ${urgent ? "urgent" : ""}">${label}</span>
       </div>
+      ${joined.length ? `
+      <p class="card-joins"><b>${joined.length} ${joined.length === 1 ? "person is" : "people are"} in</b> · ${joined.map(escapeHtml).join(", ")}</p>` : ""}
       <div class="card-actions">
         ${isMine
-      ? `<button class="btn-ghost" data-edit="${escapeHtml(o.id)}">Edit</button>
+      ? `<button class="btn btn-tinted" data-filled="${escapeHtml(o.id)}">Found someone</button>
+           <button class="btn-ghost btn-icon" data-share="${escapeHtml(o.id)}" aria-label="Share">${ICON_SHARE}</button>
+         </div>
+         <div class="card-actions card-actions-minor">
+           <button class="btn-ghost" data-edit="${escapeHtml(o.id)}">Edit</button>
            <button class="btn-ghost" data-extend="${escapeHtml(o.id)}">+15 min</button>
-           <button class="btn-ghost btn-danger" data-remove="${escapeHtml(o.id)}">Remove</button>
-           <button class="btn-ghost btn-icon" data-share="${escapeHtml(o.id)}" aria-label="Share">${ICON_SHARE}</button>`
+           <button class="btn-ghost btn-danger" data-remove="${escapeHtml(o.id)}">Remove</button>`
       : `<button class="btn btn-tinted" data-join="${escapeHtml(o.id)}">I’m in</button>
            <button class="btn-ghost btn-icon" data-share="${escapeHtml(o.id)}" aria-label="Share">${ICON_SHARE}</button>`
     }
@@ -1583,8 +1610,16 @@ function cardInnerHTML(o, myValue, pool) {
   `;
 }
 
+const contactRef = (orderId) => doc(db, ORDERS_COL, orderId, "private", "contact");
+
+// Numbers this device has legitimately seen: your own orders' and the ones
+// you've tapped "I'm in" on. A card's HTML is rebuilt whenever its countdown
+// label changes, and this is what puts a revealed number back afterwards.
+const knownContacts = new Map();
+
 async function recordJoin(o) {
-  // record the join so the poster's device (or their Cloud Function) knows to notify them
+  // The join doc does two jobs: it's what lets this person read the number
+  // (see firestore.rules), and it's what the poster's card counts.
   try {
     await setDoc(doc(db, ORDERS_COL, o.id, "joins", myId), {
       joinerId: myId,
@@ -1593,53 +1628,99 @@ async function recordJoin(o) {
       joinedAt: serverTimestamp()
     }, { merge: true });
   } catch (err) {
-    console.error("[orderknot] couldn't record join (notification to poster may not fire):", (err && err.code) || err);
+    console.error("[orderknot] couldn't record join:", (err && err.code) || err);
   }
 }
 
-function revealContactInto(slot, o) {
-  const waDigits = extractWhatsAppDigits(o.contact);
-  let html = `<div class="contact-reveal"><span>Reach out</span><b>${escapeHtml(o.contact)}</b></div>`;
+const withTimeout = (promise, ms) => Promise.race([
+  promise,
+  new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))
+]);
+
+// Opts in, then fetches the poster's number. Unlike everything else on the
+// board this genuinely needs the server: the number isn't in the order any
+// more, and the rules only release it once the join has landed.
+async function joinAndGetContact(o) {
+  if (knownContacts.has(o.id)) return knownContacts.get(o.id);
+  let contact = null;
+  if (o.contact) {
+    // Posted before numbers moved out of the order document.
+    contact = o.contact;
+    recordJoin(o);
+  } else {
+    try {
+      await withTimeout(recordJoin(o), 10000);
+      const snap = await withTimeout(getDoc(contactRef(o.id)), 10000);
+      contact = snap.exists() ? snap.data().contact : null;
+    } catch (err) {
+      console.error("[orderknot] couldn't fetch contact:", (err && err.code) || err);
+    }
+  }
+  if (!contact) {
+    toast("Couldn't get the number. Check your connection and try again", 4000);
+    return null;
+  }
+  knownContacts.set(o.id, contact);
+  return contact;
+}
+
+function revealContactInto(slot, o, contact) {
+  const waDigits = extractWhatsAppDigits(contact);
+  let html = `<div class="contact-reveal"><span>Reach out</span><b>${escapeHtml(contact)}</b></div>`;
   if (waDigits) {
     html += `<a class="btn btn-primary btn-block wa-link" href="${buildWhatsAppLink(waDigits, o)}" target="_blank" rel="noopener">Message on WhatsApp</a>`;
   }
   slot.innerHTML = html;
 }
 
-// Orders whose contact this person has already revealed. A card's HTML is
-// rebuilt whenever its countdown label changes, which used to wipe the
-// revealed number off the card a minute after it was shown.
-const revealedOrders = new Set();
+// Removes an order together with its private number.
+function deleteOrder(o) {
+  const batch = writeBatch(db);
+  batch.delete(contactRef(o.id));
+  batch.delete(doc(db, ORDERS_COL, o.id));
+  return batch.commit();
+}
 
 function wireCardEvents(el, o, pool) {
   const joinBtn = el.querySelector("[data-join]");
-  if (joinBtn && revealedOrders.has(o.id)) {
+  if (joinBtn && knownContacts.has(o.id)) {
     const slot = el.querySelector(".contact-slot");
     slot.classList.add("no-anim"); // restoring, not revealing — don't replay the entrance
-    revealContactInto(slot, o);
+    revealContactInto(slot, o, knownContacts.get(o.id));
     joinBtn.disabled = true;
     joinBtn.textContent = "Contact revealed";
   } else if (joinBtn) {
-    joinBtn.addEventListener("click", () => {
+    joinBtn.addEventListener("click", async () => {
       joinBtn.disabled = true;
-      revealedOrders.add(o.id);
-      // Reveal FIRST, and never await the join write.
-      //
-      // The contact is already in the order document we're rendering — showing
-      // it needs no network whatsoever. Awaiting recordJoin() before revealing
-      // meant that on a phone, where the server ack can hang for a long time,
-      // the button sat on "…" forever and the number never appeared. The join
-      // record is bookkeeping for a future notification; it must never gate
-      // the thing the user actually pressed the button for.
-      revealContactInto(el.querySelector(".contact-slot"), o);
-      joinBtn.textContent = "Contact revealed";
-      recordJoin(o); // fire-and-forget; it logs its own failures
+      joinBtn.textContent = "Getting number…";
+      const contact = await joinAndGetContact(o);
+      // The card may have been rebuilt while that was in flight (its
+      // countdown ticked over), so act on whatever is on the board NOW.
+      const card = board.querySelector(`[data-order-id="${CSS.escape(o.id)}"]`);
+      const btn = card && card.querySelector("[data-join]");
+      if (!btn) return;
+      if (!contact) {
+        btn.disabled = false;
+        btn.textContent = "I’m in";
+        return;
+      }
+      revealContactInto(card.querySelector(".contact-slot"), o, contact);
+      btn.disabled = true;
+      btn.textContent = "Contact revealed";
     });
   }
+  const closeOrder = (failMsg) => deleteOrder(o).catch((err) => toast(`${failMsg}: ${describeWriteError(err)}`, 4000));
   const removeBtn = el.querySelector("[data-remove]");
-  if (removeBtn) {
-    removeBtn.addEventListener("click", () => {
-      deleteDoc(doc(db, ORDERS_COL, o.id)).catch((err) => toast(`Couldn't remove: ${describeWriteError(err)}`, 4000));
+  if (removeBtn) removeBtn.addEventListener("click", () => closeOrder("Couldn't remove"));
+
+  // Same effect as Remove, different meaning: this is the happy ending, and
+  // it's the button people should reach for so a clubbed order stops
+  // collecting messages.
+  const filledBtn = el.querySelector("[data-filled]");
+  if (filledBtn) {
+    filledBtn.addEventListener("click", () => {
+      closeOrder("Couldn't close it");
+      toast("Closed. Enjoy the order");
     });
   }
 
@@ -1679,14 +1760,63 @@ function wireCardEvents(el, o, pool) {
   if (nested) wireMatchRows(nested, matchesFor(o, pool));
 }
 
+/* ---------------- who's in on my orders ----------------
+   The poster used to learn nothing until a WhatsApp message arrived. Each of
+   your own live orders gets a listener on its joins, which drives the count
+   on the card and a toast when someone new opts in. */
+const joinsByOrder = new Map();   // orderId -> [names]
+const joinListeners = new Map();  // orderId -> unsubscribe
+
+function syncJoinListeners(active) {
+  const mine = new Set(active.filter(o => o.posterId === myId).map(o => o.id));
+  for (const [id, unsub] of joinListeners) {
+    if (mine.has(id)) continue;
+    try { unsub(); } catch { /* already torn down */ }
+    joinListeners.delete(id);
+    joinsByOrder.delete(id);
+  }
+  mine.forEach(id => {
+    if (joinListeners.has(id)) return;
+    let first = true;
+    const unsub = onSnapshot(collection(db, ORDERS_COL, id, "joins"), (snap) => {
+      const names = [];
+      snap.forEach(d => {
+        const j = d.data();
+        if (j.joinerId !== myId) names.push(j.joinerName || "Someone");
+      });
+      const before = joinsByOrder.get(id) || [];
+      joinsByOrder.set(id, names);
+      // Not on the first snapshot: that's history, not news.
+      if (!first && names.length > before.length) {
+        const fresh = names.find(n => !before.includes(n)) || names[names.length - 1];
+        toast(`${fresh} is in on your order`, 3500);
+      }
+      first = false;
+      try { render(); } catch (err) { console.error("[orderknot] render failed:", err); }
+    }, (err) => {
+      console.error("[orderknot] joins listener error:", (err && err.code) || err);
+      joinListeners.delete(id); // let the next render try again
+    });
+    joinListeners.set(id, unsub);
+  });
+}
+
+function stopJoinListeners() {
+  for (const unsub of joinListeners.values()) { try { unsub(); } catch { /* ignore */ } }
+  joinListeners.clear();
+  joinsByOrder.clear();
+}
+
 function render() {
   const now = Date.now();
   const active = latestOrders.filter(o => (o.expiresAt || 0) > now);
 
   // lazy-clean expired ones (best effort, ignore failures)
   latestOrders.filter(o => (o.expiresAt || 0) <= now).forEach(o => {
-    deleteDoc(doc(db, ORDERS_COL, o.id)).catch(() => { });
+    (o.posterId === myId ? deleteOrder(o) : deleteDoc(doc(db, ORDERS_COL, o.id))).catch(() => { });
   });
+
+  syncJoinListeners(active);
 
   // Matching always runs against every live order, not just the visible ones —
   // filtering the board shouldn't change who can actually club together.
@@ -1905,6 +2035,66 @@ function escapeHtml(str) {
   }[m]));
 }
 
+/* ---------------- add to home screen ----------------
+   Offered from the second visit: the first is for finding out what this is.
+   Android/Chrome hands us an install prompt to trigger; iOS Safari has no
+   API for it at all, so the hint explains the two taps instead. */
+const VISITS_KEY = "orderknot_visits";
+const INSTALL_DISMISSED_KEY = "orderknot_install_dismissed";
+const installHint = document.getElementById("installHint");
+const installBtn = document.getElementById("installBtn");
+const installHintSub = document.getElementById("installHintSub");
+let deferredInstall = null;
+
+function countVisit() {
+  try {
+    if (sessionStorage.getItem(VISITS_KEY)) return; // once per session, not per reload
+    sessionStorage.setItem(VISITS_KEY, "1");
+    localStorage.setItem(VISITS_KEY, String((Number(localStorage.getItem(VISITS_KEY)) || 0) + 1));
+  } catch { /* storage blocked */ }
+}
+
+function syncInstallHint() {
+  let visits = 0, dismissed = false;
+  try {
+    visits = Number(localStorage.getItem(VISITS_KEY)) || 0;
+    dismissed = !!localStorage.getItem(INSTALL_DISMISSED_KEY);
+  } catch { /* storage blocked */ }
+  const installed = navigator.standalone === true ||
+    (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+
+  let show = !installed && !dismissed && visits >= 2;
+  if (show && deferredInstall) {
+    installBtn.hidden = false;
+    installHintSub.textContent = "Opens like an app, one tap from anywhere.";
+  } else if (show && IS_IOS && !isInAppBrowser()) {
+    installBtn.hidden = true;
+    installHintSub.textContent = "Tap the Share button, then “Add to Home Screen”.";
+  } else {
+    show = false; // no way to install from this browser — don't advertise one
+  }
+  installHint.hidden = !show;
+}
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault(); // hold it for our own button instead of the browser's mini-bar
+  deferredInstall = e;
+  syncInstallHint();
+});
+window.addEventListener("appinstalled", () => { deferredInstall = null; syncInstallHint(); });
+installBtn.addEventListener("click", async () => {
+  if (!deferredInstall) return;
+  deferredInstall.prompt();
+  try { await deferredInstall.userChoice; } catch { /* ignore */ }
+  deferredInstall = null; // a prompt can only be used once
+  syncInstallHint();
+});
+document.getElementById("installDismiss").addEventListener("click", () => {
+  try { localStorage.setItem(INSTALL_DISMISSED_KEY, "1"); } catch { /* storage blocked */ }
+  installHint.hidden = true;
+});
+countVisit();
+
 /* The top bar's hairline only shows once the board is scrolled under it. */
 const topbar = document.getElementById("topbar");
 const syncTopbar = () => topbar.classList.toggle("scrolled", window.scrollY > 4);
@@ -1952,6 +2142,7 @@ onAuthStateChanged(auth, (user) => {
       // to a single app that may well be empty.
       currentFilter = isValidFilter(getSavedFilter()) ? getSavedFilter() : FILTER_ALL;
       applyFilterUI();
+      syncInstallHint();
       startOrdersListener(); // only read once we have a valid, verified auth token
     } else {
       if (user) {
