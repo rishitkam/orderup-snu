@@ -515,7 +515,11 @@ a { color: inherit; }
   height: 68%;
   display: block;
 }
-.app-dot[data-app="Blinkit"] { background: #F8CB46; color: #1d1d1f; }
+/* Blinkit and Zomato draw their own full tile; the mark fills the dot. */
+.app-dot { overflow: hidden; }
+.app-dot[data-app="Blinkit"] svg,
+.app-dot[data-app="Zomato"] svg { width: 100%; height: 100%; }
+.app-dot[data-app="Blinkit"] { background: #FFE141; color: #1d1d1f; }
 .app-dot[data-app="Zomato"]  { background: #E23744; color: #fff; }
 .app-dot[data-app="Swiggy"]  { background: #FC8019; color: #fff; }
 .app-dot-lg {
