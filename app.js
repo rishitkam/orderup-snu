@@ -2185,9 +2185,11 @@ function escapeHtml(str) {
 }
 
 /* ---------------- add to home screen ----------------
-   Offered from the second visit: the first is for finding out what this is.
-   Android/Chrome hands us an install prompt to trigger; iOS Safari has no
-   API for it at all, so the hint explains the two taps instead. */
+   Chrome on Android hands us an install prompt to trigger. When it doesn't
+   (it holds the prompt back until it judges the site "engaged", and Samsung
+   Internet and others never send it), and on iOS, which has no API for it at
+   all, the hint explains the taps instead. */
+const IS_ANDROID = /Android/i.test(navigator.userAgent);
 const VISITS_KEY = "orderknot_visits";
 const INSTALL_DISMISSED_KEY = "orderknot_install_dismissed";
 const installHint = document.getElementById("installHint");
@@ -2212,13 +2214,16 @@ function syncInstallHint() {
   const installed = navigator.standalone === true ||
     (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
 
-  let show = !installed && !dismissed && visits >= 2;
+  let show = !installed && !dismissed && visits >= 1;
   if (show && deferredInstall) {
     installBtn.hidden = false;
     installHintSub.textContent = "Opens like an app, one tap from anywhere.";
   } else if (show && IS_IOS && !isInAppBrowser()) {
     installBtn.hidden = true;
     installHintSub.textContent = "Tap the Share button, then “Add to Home Screen”.";
+  } else if (show && IS_ANDROID && !isInAppBrowser()) {
+    installBtn.hidden = true;
+    installHintSub.textContent = "Tap the ⋮ menu, then “Add to Home screen” or “Install app”.";
   } else {
     show = false; // no way to install from this browser — don't advertise one
   }
