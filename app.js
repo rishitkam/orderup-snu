@@ -732,9 +732,158 @@ function orderShareUrl(o) {
   return `${location.origin}${location.pathname}?order=${encodeURIComponent(o.id)}`;
 }
 
+/* A picture of this specific order, attached to the share.
+
+   A link preview can't do this: WhatsApp fetches the page itself, and a
+   static site serves the same tags for every ?order= link. So the card is
+   drawn here, on the phone, and sent as an image alongside the link. */
+const APP_TILE = { Blinkit: "#FFE141", Zomato: "#E23744", Swiggy: "#FC8019" };
+
+function loadSvg(svg) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    // Canvas needs an explicit size on the root element to rasterise an SVG.
+    const sized = svg.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" ');
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(sized);
+  });
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// Shortens text with an ellipsis until it fits the given width.
+function fitText(ctx, text, maxW) {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(t + "…").width > maxW) t = t.slice(0, -1);
+  return t + "…";
+}
+
+async function orderCardImage(o) {
+  const W = 1080, H = 1080;
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const ctx = c.getContext("2d");
+  const font = (w, px) => `${w} ${px}px -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+  const ink = "#111113", soft = "#6e6e73";
+
+  ctx.fillStyle = "#f2f2f7";
+  ctx.fillRect(0, 0, W, H);
+
+  // Brand row
+  try {
+    const logo = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = "logo.png"; });
+    ctx.drawImage(logo, 96, 92, 64, 67);
+  } catch { /* logo is decoration; the card stands without it */ }
+  ctx.fillStyle = ink;
+  ctx.font = font(600, 40);
+  ctx.textBaseline = "middle";
+  ctx.fillText("OrderKnot", 178, 127);
+
+  // The card
+  const cx = 72, cy = 224, cw = W - 144, ch = 640;
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.08)";
+  ctx.shadowBlur = 60;
+  ctx.shadowOffsetY = 20;
+  ctx.fillStyle = "#fff";
+  roundRect(ctx, cx, cy, cw, ch, 48);
+  ctx.fill();
+  ctx.restore();
+
+  // App mark
+  const mx = cx + 48, my = cy + 52, ms = 132;
+  ctx.save();
+  roundRect(ctx, mx, my, ms, ms, 32);
+  ctx.clip();
+  ctx.fillStyle = APP_TILE[o.app] || "#8e8e93";
+  ctx.fillRect(mx, my, ms, ms);
+  const icon = APP_ICONS[o.app];
+  if (icon) {
+    try {
+      const svg = o.app === "Swiggy" ? icon.replace(/currentColor/g, "#ffffff") : icon;
+      const img = await loadSvg(svg);
+      const inset = o.app === "Swiggy" ? ms * 0.2 : 0;
+      ctx.drawImage(img, mx + inset, my + inset, ms - inset * 2, ms - inset * 2);
+    } catch { /* fall back to the plain colour tile */ }
+  }
+  ctx.restore();
+
+  // Title + who
+  const tx = mx + ms + 32, tw = cx + cw - 48 - tx;
+  ctx.fillStyle = ink;
+  ctx.font = font(700, 54);
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText(fitText(ctx, o.outlet || o.app, tw), tx, my + 58);
+  ctx.fillStyle = soft;
+  ctx.font = font(400, 38);
+  const who = [o.outlet ? o.app : "", o.posterName ? `posted by ${o.posterName}` : ""].filter(Boolean).join(" · ");
+  ctx.fillText(fitText(ctx, who, tw), tx, my + 112);
+
+  // The number that matters
+  ctx.fillStyle = "#0066cc";
+  ctx.font = font(700, 168);
+  ctx.fillText(`₹${Number(o.target) || 0}`, cx + 48, cy + 400);
+  ctx.fillStyle = ink;
+  ctx.font = font(600, 46);
+  ctx.fillText("more needed for free delivery", cx + 52, cy + 470);
+
+  // Divider + details
+  ctx.fillStyle = "rgba(60,60,67,0.14)";
+  ctx.fillRect(cx + 48, cy + 522, cw - 96, 2);
+  ctx.fillStyle = soft;
+  ctx.font = font(400, 38);
+  const where = [o.location, Number(o.current) > 0 ? `cart ₹${Number(o.current)}` : ""].filter(Boolean).join(" · ");
+  const closes = isAllDay(o.expiresAt) ? "open till midnight" : timeLeftLabel(o.expiresAt).label;
+  const closesW = ctx.measureText(closes).width;
+  ctx.fillText(fitText(ctx, where, cw - 96 - closesW - 40), cx + 48, cy + 588);
+  ctx.textAlign = "right";
+  ctx.fillText(closes, cx + cw - 48, cy + 588);
+  ctx.textAlign = "left";
+
+  // Call to action
+  ctx.fillStyle = ink;
+  ctx.font = font(600, 44);
+  ctx.textAlign = "center";
+  ctx.fillText("Tap the link to join in", W / 2, 960);
+  ctx.fillStyle = soft;
+  ctx.font = font(400, 34);
+  ctx.fillText("SNU students only", W / 2, 1012);
+  ctx.textAlign = "left";
+
+  const blob = await new Promise(res => c.toBlob(res, "image/png"));
+  return blob ? new File([blob], "orderknot-order.png", { type: "image/png" }) : null;
+}
+
 async function shareOrder(o) {
   const url = orderShareUrl(o);
   const text = orderShareText(o);
+
+  // Image + link where the phone can share files; otherwise just the link.
+  if (navigator.share && navigator.canShare) {
+    let file = null;
+    try { file = await orderCardImage(o); } catch (err) { console.error("[orderknot] share card failed:", err); }
+    if (file && navigator.canShare({ files: [file] })) {
+      try {
+        // The URL goes inside the text: alongside a file, some share
+        // targets (WhatsApp among them) drop a separate url field.
+        await navigator.share({ files: [file], text: `${text}\n${url}` });
+        return;
+      } catch (err) {
+        if (err && err.name === "AbortError") return;
+        console.error("[orderknot] image share failed, falling back to link:", err);
+      }
+    }
+  }
 
   if (navigator.share) {
     try {
