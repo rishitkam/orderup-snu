@@ -29,8 +29,26 @@ service cloud.firestore {
       return !("contact" in request.resource.data) || hasUsableContact();
     }
 
+    // Admins: a doc at /admins/{uid}, added by hand in the Firebase console.
+    function isAdmin() {
+      return request.auth != null &&
+             exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // An anonymous order must not carry the poster's email.
+    function anonIsAnon() {
+      return request.resource.data.get("anonymous", false) != true ||
+             !("posterEmail" in request.resource.data);
+    }
+
     function isKnownApp() {
       return request.resource.data.app in ["Blinkit", "Zomato", "Swiggy"];
+    }
+
+    // Readable by the admin themself, so the app can tell it's an admin.
+    // Nobody can write here from the app; add admins in the Firebase console.
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
     }
 
     match /orders/{orderId} {
@@ -48,6 +66,7 @@ service cloud.firestore {
       allow create: if isStudent() &&
                      request.resource.data.posterId == request.auth.uid &&
                      contactAbsentOrUsable() &&
+                     anonIsAnon() &&
                      isKnownApp() &&
                      request.resource.data.outlet is string &&
                      request.resource.data.current is number &&
@@ -66,6 +85,7 @@ service cloud.firestore {
                      resource.data.posterId == request.auth.uid &&
                      request.resource.data.posterId == resource.data.posterId &&
                      contactAbsentOrUsable() &&
+                     anonIsAnon() &&
                      isKnownApp();
 
       allow delete: if isStudent() &&
@@ -76,7 +96,9 @@ service cloud.firestore {
       // by the poster, and by someone who has actually tapped "I'm in"
       // (which is what writes their /joins doc).
       match /private/{docId} {
-        allow read: if isStudent() &&
+        // The real name behind an anonymous post: only the poster and admins.
+        allow read: if docId == "poster" && isAdmin();
+        allow read: if docId == "contact" && isStudent() &&
                      exists(/databases/$(database)/documents/orders/$(orderId)) &&
                      (get(/databases/$(database)/documents/orders/$(orderId)).data.posterId == request.auth.uid ||
                       exists(/databases/$(database)/documents/orders/$(orderId)/joins/$(request.auth.uid)));
@@ -88,6 +110,12 @@ service cloud.firestore {
                      getAfter(/databases/$(database)/documents/orders/$(orderId)).data.posterId == request.auth.uid &&
                      request.resource.data.keys().hasOnly(["contact"]) &&
                      hasUsableContact();
+
+        allow create, update: if isStudent() &&
+                     docId == "poster" &&
+                     getAfter(/databases/$(database)/documents/orders/$(orderId)).data.posterId == request.auth.uid &&
+                     request.resource.data.keys().hasOnly(["name", "email"]) &&
+                     request.resource.data.email == request.auth.token.email;
 
         allow delete: if isStudent() &&
                      get(/databases/$(database)/documents/orders/$(orderId)).data.posterId == request.auth.uid;

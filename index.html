@@ -281,6 +281,11 @@
           <span class="field-hint">Only people ordering from the same outlet can club with you.</span>
         </label>
 
+        <div class="join-instead" id="joinInstead" hidden>
+          <div class="join-instead-title" id="joinInsteadTitle"></div>
+          <div class="match-list" id="joinInsteadList"></div>
+        </div>
+
         <div class="field-row">
           <label class="field">
             <span class="field-label">Cart so far (₹)</span>
@@ -315,6 +320,10 @@
               placeholder="9876543210" required />
           </label>
         </div>
+        <label class="anon-toggle" hidden>
+          <span><b>Post anonymously</b><small>Hide your name. People see only your number after they tap I’m in.</small></span>
+          <input type="checkbox" id="fAnon" role="switch" />
+        </label>
         <p class="form-note">Your number is shown only to people who tap I’m in.<span id="contactHint" hidden></span></p>
 
         <button type="submit" class="btn btn-primary btn-block">Post to the board</button>

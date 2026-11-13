@@ -1,4 +1,4 @@
-const CACHE = "orderknot-v56";
+const CACHE = "orderknot-v57";
 const ASSETS = ["./", "index.html", "style.css", "app.js", "manifest.json", "logo.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -51,4 +51,13 @@ self.addEventListener("fetch", (e) => {
       })
       .catch(() => caches.match(e.request))
   );
+});
+
+// Tapping a notification brings the app back (or opens it).
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+    const c = list.find((w) => "focus" in w);
+    return c ? c.focus() : self.clients.openWindow("./");
+  }));
 });

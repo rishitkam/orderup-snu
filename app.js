@@ -1,5 +1,5 @@
 import {
-  db, auth, googleProvider, ALLOWED_DOMAIN, persistenceState, persistenceReady
+  db, auth, googleProvider, ALLOWED_DOMAIN, persistenceState, persistenceReady, track
 } from "./firebase-config.js";
 import {
   collection, onSnapshot, deleteDoc, doc, setDoc, getDoc, updateDoc,
@@ -865,6 +865,7 @@ async function orderCardImage(o) {
 }
 
 async function shareOrder(o) {
+  track("share", { method: "order" });
   const url = orderShareUrl(o);
   const text = orderShareText(o);
 
@@ -1308,6 +1309,7 @@ function openPostModal(order) {
   postModalTitle.textContent = order ? "Edit your order" : "Post an order";
   if (postSubmitBtn) postSubmitBtn.textContent = order ? "Save changes" : "Post to the board";
 
+  joinInstead.hidden = true;
   if (order) {
     // Editing: every field comes from the order itself, not from saved defaults.
     // The number lives in a private doc now. Fill from what this device
@@ -1320,6 +1322,7 @@ function openPostModal(order) {
     // the list; leave the placeholder showing rather than silently reassigning
     // them to whichever option happens to be first.
     fLocation.value = isKnownPickup(order.location) ? order.location : "";
+    document.getElementById("fAnon").checked = !!order.anonymous;
     fCurrent.value = order.current || "";
     fTarget.value = order.target || "";
     fExpiry.value = closestExpiryOption(order);
@@ -1357,6 +1360,8 @@ function openPostModal(order) {
 
   syncOutletField(fApp.value);
   openModal(postModalBackdrop);
+  joinInsteadKey = "";
+  syncJoinInstead();
 }
 
 function closePostModal() {
@@ -1456,6 +1461,7 @@ postForm.addEventListener("submit", async (e) => {
     return;
   }
 
+  const anon = document.getElementById("fAnon").checked;
   const location = document.getElementById("fLocation").value.trim();
   const expiryVal = document.getElementById("fExpiry").value;
 
@@ -1468,10 +1474,11 @@ postForm.addEventListener("submit", async (e) => {
     target,
     location,
     posterId: myId,
-    posterName: getMyName(),
-    posterEmail: myEmail,
+    posterName: anon ? "Anonymous" : getMyName(),
+    anonymous: anon,
     expiresAt
   };
+  if (!anon) payload.posterEmail = myEmail;
 
   const isEdit = !!editingOrderId;
 
@@ -1490,11 +1497,14 @@ postForm.addEventListener("submit", async (e) => {
       // createdAt is left alone — editing shouldn't jump the order back to
       // the top of the board. deleteField strips the number off orders that
       // were posted before it moved out of the order document.
-      batch.update(orderRef, { ...payload, contact: deleteField() });
+      batch.update(orderRef, { ...payload, contact: deleteField(), ...(anon ? { posterEmail: deleteField() } : {}) });
     } else {
       batch.set(orderRef, { ...payload, createdAt: serverTimestamp() });
     }
     batch.set(contactRef(orderRef.id), { contact });
+    // The real name always goes somewhere only the poster and admins can read,
+    // so anonymous posts stay accountable.
+    batch.set(doc(db, ORDERS_COL, orderRef.id, "private", "poster"), { name: getMyName(), email: myEmail });
     knownContacts.set(orderRef.id, contact);
 
     batch.commit().catch((err) => {
@@ -1512,12 +1522,51 @@ postForm.addEventListener("submit", async (e) => {
     closePostModal();
     toast(isEdit ? "Order updated" : "Posted to the board");
     // Editing can change your cart value, which changes who matches you.
+    track("post_order", { app: payload.app });
+    askNotifyPermission();
     showMatchesFor(payload);
   } catch (err) {
     console.error(err);
     toast("Couldn't post. Check your Firebase setup");
   }
 });
+
+/* ---------------- join instead ----------------
+   While someone fills in the post form, show live orders they could simply
+   join. Two people posting the same thing and both waiting is the commonest
+   way a club never happens. */
+const joinInstead = document.getElementById("joinInstead");
+const joinInsteadTitle = document.getElementById("joinInsteadTitle");
+const joinInsteadList = document.getElementById("joinInsteadList");
+let joinInsteadKey = "";
+
+function syncJoinInstead() {
+  if (editingOrderId || !postModalBackdrop.classList.contains("open")) {
+    joinInstead.hidden = true; joinInsteadKey = ""; return;
+  }
+  const app = fApp.value;
+  const outlet = readOutlet();
+  const current = Number(document.getElementById("fCurrent").value) || 0;
+  const now = Date.now();
+  const draft = { app, outlet, current, posterId: myId };
+  let pool = latestOrders.filter(o => (o.expiresAt || 0) > now && o.posterId !== myId && o.app === app &&
+    (!appNeedsOutlet(app) || (outlet && outletsSimilar(outlet, o.outlet))));
+  pool = current ? matchesFor(draft, pool) : pool.sort((a, b) => (a.target || 0) - (b.target || 0));
+  pool = pool.slice(0, 3);
+  const key = pool.map(o => o.id + ":" + o.target).join("|");
+  if (key === joinInsteadKey) return;
+  joinInsteadKey = key;
+  if (!pool.length) { joinInstead.hidden = true; return; }
+  const where = outlet ? `${app} · ${outlet}` : app;
+  joinInsteadTitle.textContent = pool.length === 1
+    ? `Someone's already ordering on ${where}. Join instead?`
+    : `${pool.length} people are already ordering on ${where}. Join instead?`;
+  joinInsteadList.innerHTML = pool.map(m => matchRowHTML(m, current ? draft : null)).join("");
+  wireMatchRows(joinInsteadList, pool);
+  joinInstead.hidden = false;
+}
+postForm.addEventListener("input", syncJoinInstead);
+postForm.addEventListener("change", syncJoinInstead);
 
 /* ---------------- matches modal ----------------
    Opens by itself right after a successful post: the whole point of posting is
@@ -1618,6 +1667,8 @@ function startOrdersListener() {
       // can switch tabs and clear filters, so it must run before render().
       maybeConsumeDeepLink();
       render();
+      syncJoinInstead();
+      notifyNewMatches(latestOrders);
     } catch (err) {
       console.error("[orderknot] render failed:", err);
     }
@@ -1714,8 +1765,9 @@ function cardInnerHTML(o, myValue, pool) {
   const title = o.outlet || o.app;
   const sub = [
     o.outlet ? o.app : "",
-    isMine ? "You" : (o.posterName || "someone")
-  ].filter(Boolean).map(escapeHtml).join(" · ");
+    isMine ? (o.anonymous ? "You (anonymous)" : "You") : (o.posterName || "someone")
+  ].filter(Boolean).map(escapeHtml).join(" · ")
+    + (adminRealName(o) ? ` <span class="admin-name">· ${escapeHtml(realNames.get(o.id))}</span>` : "");
   const where = [o.location, current > 0 ? `cart ₹${current}` : ""].filter(Boolean).map(escapeHtml).join(" · ");
 
   return `
@@ -1810,6 +1862,7 @@ async function joinAndGetContact(o) {
     return null;
   }
   knownContacts.set(o.id, contact);
+  track("join_order", { app: o.app });
   return contact;
 }
 
@@ -1826,6 +1879,7 @@ function revealContactInto(slot, o, contact) {
 function deleteOrder(o) {
   const batch = writeBatch(db);
   batch.delete(contactRef(o.id));
+  batch.delete(doc(db, ORDERS_COL, o.id, "private", "poster"));
   batch.delete(doc(db, ORDERS_COL, o.id));
   return batch.commit();
 }
@@ -1909,6 +1963,65 @@ function wireCardEvents(el, o, pool) {
   if (nested) wireMatchRows(nested, matchesFor(o, pool));
 }
 
+/* ---------------- admin ----------------
+   An admin is any account with a doc at /admins/{uid} (added by hand in the
+   Firebase console). Admins can read the real name behind anonymous posts. */
+let isAdmin = false;
+const realNames = new Map(); // orderId -> name, admins only
+async function checkAdmin() {
+  isAdmin = false;
+  try { isAdmin = (await getDoc(doc(db, "admins", myId))).exists(); } catch { /* not an admin */ }
+  if (isAdmin) { toast("Signed in as admin", 2500); render(); }
+}
+function adminRealName(o) {
+  if (!isAdmin || !o.anonymous || o.posterId === myId) return "";
+  if (realNames.has(o.id)) return realNames.get(o.id);
+  realNames.set(o.id, "");
+  getDoc(doc(db, ORDERS_COL, o.id, "private", "poster")).then(snap => {
+    realNames.set(o.id, snap.exists() ? snap.data().name || snap.data().email || "" : "");
+    render();
+  }).catch(() => {});
+  return "";
+}
+
+/* ---------------- system notifications ----------------
+   Free, no server: while the app is still running (open in another tab, or
+   in the phone's recent apps) we raise a real phone notification instead of a
+   toast nobody sees. Fully closed apps can't be reached without a push server. */
+const canNotify = () => "Notification" in window && "serviceWorker" in navigator;
+
+function askNotifyPermission() {
+  if (!canNotify() || Notification.permission !== "default") return;
+  Notification.requestPermission().catch(() => {});
+}
+
+async function notify(title, body, tag) {
+  if (!canNotify() || Notification.permission !== "granted" || !document.hidden) return false;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification(title, { body, tag, icon: "icon-192.png", badge: "icon-192.png" });
+    return true;
+  } catch { return false; }
+}
+
+// New orders that would club with one of my live orders.
+let seenOrderIds = null;
+function notifyNewMatches(orders) {
+  const now = Date.now();
+  const live = orders.filter(o => (o.expiresAt || 0) > now);
+  const ids = new Set(orders.map(o => o.id));
+  if (seenOrderIds) {
+    const mine = live.filter(o => o.posterId === myId);
+    live.forEach(o => {
+      if (seenOrderIds.has(o.id) || o.posterId === myId) return;
+      const hit = mine.find(m => canClub(m, o) || canClub(o, m));
+      if (hit) notify(`${o.posterName || "Someone"} is ordering on ${o.app} too`,
+        `Needs ₹${Number(o.target) || 0} · ${o.location || ""}. Tap to club.`, "match-" + o.id);
+    });
+  }
+  seenOrderIds = ids;
+}
+
 /* ---------------- who's in on my orders ----------------
    The poster used to learn nothing until a WhatsApp message arrived. Each of
    your own live orders gets a listener on its joins, which drives the count
@@ -1939,6 +2052,7 @@ function syncJoinListeners(active) {
       if (!first && names.length > before.length) {
         const fresh = names.find(n => !before.includes(n)) || names[names.length - 1];
         toast(`${fresh} is in on your order`, 3500);
+        notify(`${fresh} is in on your order`, "They'll message you on WhatsApp.", "join-" + id);
       }
       first = false;
       try { render(); } catch (err) { console.error("[orderknot] render failed:", err); }
@@ -2283,6 +2397,7 @@ onAuthStateChanged(auth, (user) => {
   try {
     if (user && user.email && user.email.toLowerCase().endsWith("@" + ALLOWED_DOMAIN)) {
       myId = user.uid;
+      checkAdmin();
       myEmail = user.email;
       myName = user.displayName || user.email.split("@")[0];
       whoamiEmail.textContent = myName;

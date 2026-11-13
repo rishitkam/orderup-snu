@@ -58,6 +58,22 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig);
 
+// Free Google Analytics (Firebase → Analytics dashboard). Loaded lazily and
+// never allowed to break the app: ad blockers and some webviews block it.
+let analyticsMod = null;
+const analyticsReady = (location.hostname.endsWith(".web.app") || location.hostname.endsWith(".firebaseapp.com"))
+  ? import("https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics.js")
+      .then(async (m) => {
+        if (!(await m.isSupported())) return null;
+        analyticsMod = m;
+        return m.getAnalytics(app);
+      })
+      .catch(() => null)
+  : Promise.resolve(null);
+export function track(name, params) {
+  analyticsReady.then((a) => { if (a && analyticsMod) analyticsMod.logEvent(a, name, params); }).catch(() => {});
+}
+
 // App Check attaches a reCAPTCHA v3 attestation token to every request this
 // app makes to Firestore, proving to the server that the request came from
 // this real, registered web app and not a script hitting the API directly.
