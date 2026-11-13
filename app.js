@@ -1867,7 +1867,37 @@ async function joinAndGetContact(o) {
   return contact;
 }
 
+// A revealed number hides itself again after 10 seconds. Tapping "I'm in"
+// again shows it instantly (it's cached), for another 10 seconds.
+const REVEAL_MS = 10000;
+const revealedUntil = new Map(); // orderId -> timestamp
+const isRevealed = (id) => (revealedUntil.get(id) || 0) > Date.now();
+function markRevealed(id) {
+  revealedUntil.set(id, Date.now() + REVEAL_MS);
+  setTimeout(() => {
+    if (isRevealed(id)) return; // re-tapped since; a later timer handles it
+    revealedUntil.delete(id);
+    // Match rows (in sheets) aren't rebuilt by render(): reset them by hand.
+    document.querySelectorAll(`.match-row[data-match-id="${CSS.escape(id)}"]`).forEach(row => {
+      row.querySelector(".contact-slot")?.remove();
+      if (!row.querySelector("[data-reveal]")) {
+        const btn = document.createElement("button");
+        btn.type = "button"; btn.className = "btn btn-tinted match-cta";
+        btn.dataset.reveal = id; btn.textContent = "I’m in";
+        row.appendChild(btn);
+        const order = latestOrders.find(x => x.id === id);
+        if (order) wireMatchRows(row, [order]);
+      }
+    });
+    // Cards only rebuild when their markup changes; force this one.
+    const card = board.querySelector(`[data-order-id="${CSS.escape(id)}"]`);
+    if (card) card.dataset.snapshot = "";
+    try { render(); } catch (err) { console.error("[orderknot] render failed:", err); }
+  }, REVEAL_MS + 50);
+}
+
 function revealContactInto(slot, o, contact) {
+  if (!isRevealed(o.id)) markRevealed(o.id);
   const waDigits = extractWhatsAppDigits(contact);
   let html = `<div class="contact-reveal"><span>Reach out</span><b>${escapeHtml(contact)}</b></div>`;
   if (waDigits) {
@@ -1887,7 +1917,7 @@ function deleteOrder(o) {
 
 function wireCardEvents(el, o, pool) {
   const joinBtn = el.querySelector("[data-join]");
-  if (joinBtn && knownContacts.has(o.id)) {
+  if (joinBtn && knownContacts.has(o.id) && isRevealed(o.id)) {
     const slot = el.querySelector(".contact-slot");
     slot.classList.add("no-anim"); // restoring, not revealing — don't replay the entrance
     revealContactInto(slot, o, knownContacts.get(o.id));
