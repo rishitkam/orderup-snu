@@ -1758,7 +1758,7 @@ function cardInnerHTML(o, myValue, pool) {
   // are their business — and surfacing them on every card turned the board
   // into a wall of nested lists.
   const matches = isMine ? matchesFor(o, pool) : [];
-  const joined = isMine ? (joinsByOrder.get(o.id) || []) : [];
+  const joined = (isMine || isAdmin) ? (joinsByOrder.get(o.id) || []) : [];
 
   // The outlet is the headline when there is one (the mark already says which
   // app); otherwise the app name is.
@@ -1767,7 +1767,7 @@ function cardInnerHTML(o, myValue, pool) {
     o.outlet ? o.app : "",
     isMine ? (o.anonymous ? "You (anonymous)" : "You") : (o.posterName || "someone")
   ].filter(Boolean).map(escapeHtml).join(" · ")
-    + (adminRealName(o) ? ` <span class="admin-name">· ${escapeHtml(realNames.get(o.id))}</span>` : "");
+    + (adminRealName(o) ? ` <span class="admin-name">· ${escapeHtml(adminRealName(o))}</span>` : "");
   const where = [o.location, current > 0 ? `cart ₹${current}` : ""].filter(Boolean).map(escapeHtml).join(" · ");
 
   return `
@@ -1803,6 +1803,7 @@ function cardInnerHTML(o, myValue, pool) {
     }
       </div>
       <div class="contact-slot"></div>
+      ${adminPanelHTML(o)}
       ${matches.length ? `
       <details class="card-matches">
         <summary>${matches.length} ${matches.length === 1 ? "match" : "matches"} for your order</summary>
@@ -1914,7 +1915,10 @@ function wireCardEvents(el, o, pool) {
   }
   const closeOrder = (failMsg) => deleteOrder(o).catch((err) => toast(`${failMsg}: ${describeWriteError(err)}`, 4000));
   const removeBtn = el.querySelector("[data-remove]");
-  if (removeBtn) removeBtn.addEventListener("click", () => closeOrder("Couldn't remove"));
+  if (removeBtn) removeBtn.addEventListener("click", () => {
+    if (o.posterId !== myId && !confirm(`Remove ${o.posterName || "this"}'s order? This can't be undone.`)) return;
+    closeOrder("Couldn't remove");
+  });
 
   // Same effect as Remove, different meaning: this is the happy ending, and
   // it's the button people should reach for so a clubbed order stops
@@ -1967,21 +1971,41 @@ function wireCardEvents(el, o, pool) {
    An admin is any account with a doc at /admins/{uid} (added by hand in the
    Firebase console). Admins can read the real name behind anonymous posts. */
 let isAdmin = false;
-const realNames = new Map(); // orderId -> name, admins only
 async function checkAdmin() {
   isAdmin = false;
   try { isAdmin = (await getDoc(doc(db, "admins", myId))).exists(); } catch { /* not an admin */ }
   if (isAdmin) { toast("Signed in as admin", 2500); render(); }
 }
+const adminInfo = new Map(); // orderId -> { name, email, contact }
+function adminDetails(o) {
+  if (!isAdmin) return null;
+  if (adminInfo.has(o.id)) return adminInfo.get(o.id);
+  const info = { name: o.anonymous ? "" : (o.posterName || ""), email: o.posterEmail || "", contact: o.contact || "" };
+  adminInfo.set(o.id, info);
+  Promise.all([
+    getDoc(doc(db, ORDERS_COL, o.id, "private", "poster")).catch(() => null),
+    getDoc(contactRef(o.id)).catch(() => null)
+  ]).then(([p, c]) => {
+    if (p && p.exists()) { info.name = p.data().name || info.name; info.email = p.data().email || info.email; }
+    if (c && c.exists()) info.contact = c.data().contact || info.contact;
+    render();
+  });
+  return info;
+}
 function adminRealName(o) {
   if (!isAdmin || !o.anonymous || o.posterId === myId) return "";
-  if (realNames.has(o.id)) return realNames.get(o.id);
-  realNames.set(o.id, "");
-  getDoc(doc(db, ORDERS_COL, o.id, "private", "poster")).then(snap => {
-    realNames.set(o.id, snap.exists() ? snap.data().name || snap.data().email || "" : "");
-    render();
-  }).catch(() => {});
-  return "";
+  return (adminDetails(o) || {}).name || "";
+}
+function adminPanelHTML(o) {
+  if (!isAdmin || o.posterId === myId) return "";
+  const i = adminDetails(o);
+  const bits = [i.name, i.email, i.contact].filter(Boolean).map(escapeHtml).join(" · ");
+  return `
+      <div class="admin-panel">
+        <span class="admin-tag">Admin</span>
+        <span class="admin-bits">${bits || "Loading…"}</span>
+        <button class="btn-ghost btn-danger admin-remove" data-remove="${escapeHtml(o.id)}">Remove</button>
+      </div>`;
 }
 
 /* ---------------- system notifications ----------------
@@ -2030,7 +2054,7 @@ const joinsByOrder = new Map();   // orderId -> [names]
 const joinListeners = new Map();  // orderId -> unsubscribe
 
 function syncJoinListeners(active) {
-  const mine = new Set(active.filter(o => o.posterId === myId).map(o => o.id));
+  const mine = new Set(active.filter(o => isAdmin || o.posterId === myId).map(o => o.id));
   for (const [id, unsub] of joinListeners) {
     if (mine.has(id)) continue;
     try { unsub(); } catch { /* already torn down */ }
@@ -2049,7 +2073,8 @@ function syncJoinListeners(active) {
       const before = joinsByOrder.get(id) || [];
       joinsByOrder.set(id, names);
       // Not on the first snapshot: that's history, not news.
-      if (!first && names.length > before.length) {
+      const isMyOrder = (latestOrders.find(x => x.id === id) || {}).posterId === myId;
+      if (!first && isMyOrder && names.length > before.length) {
         const fresh = names.find(n => !before.includes(n)) || names[names.length - 1];
         toast(`${fresh} is in on your order`, 3500);
         notify(`${fresh} is in on your order`, "They'll message you on WhatsApp.", "join-" + id);

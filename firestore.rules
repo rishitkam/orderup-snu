@@ -88,8 +88,8 @@ service cloud.firestore {
                      anonIsAnon() &&
                      isKnownApp();
 
-      allow delete: if isStudent() &&
-                     resource.data.posterId == request.auth.uid;
+      allow delete: if (isStudent() &&
+                     resource.data.posterId == request.auth.uid) || isAdmin();
 
       // The poster's phone number. Kept out of the order document because
       // every signed-in student can read every order; this can be read only
@@ -97,7 +97,7 @@ service cloud.firestore {
       // (which is what writes their /joins doc).
       match /private/{docId} {
         // The real name behind an anonymous post: only the poster and admins.
-        allow read: if docId == "poster" && isAdmin();
+        allow read: if isAdmin();
         allow read: if docId == "contact" && isStudent() &&
                      exists(/databases/$(database)/documents/orders/$(orderId)) &&
                      (get(/databases/$(database)/documents/orders/$(orderId)).data.posterId == request.auth.uid ||
@@ -117,8 +117,8 @@ service cloud.firestore {
                      request.resource.data.keys().hasOnly(["name", "email"]) &&
                      request.resource.data.email == request.auth.token.email;
 
-        allow delete: if isStudent() &&
-                     get(/databases/$(database)/documents/orders/$(orderId)).data.posterId == request.auth.uid;
+        allow delete: if isAdmin() || (isStudent() &&
+                     get(/databases/$(database)/documents/orders/$(orderId)).data.posterId == request.auth.uid);
       }
 
       match /joins/{joinerId} {
@@ -126,7 +126,7 @@ service cloud.firestore {
         // rewrites the same doc.
         allow create, update: if isStudent() && request.auth.uid == joinerId;
 
-        allow read: if isStudent() &&
+        allow read: if isAdmin() || isStudent() &&
                      (request.auth.uid == joinerId ||
                       get(/databases/$(database)/documents/orders/$(orderId)).data.posterId == request.auth.uid);
       }
